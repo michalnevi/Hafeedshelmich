@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const ANTHROPIC_KEY = "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";
+const ANTHROPIC_KEY = "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";
 
 const injectPWA = () => {
   if (document.getElementById("pwa-meta")) return;
