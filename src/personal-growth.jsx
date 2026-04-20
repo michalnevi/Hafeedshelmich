@@ -36,7 +36,7 @@ const pickFormat = () => FORMATS[Math.floor(Math.random()*FORMATS.length)];
 const pickSource = () => SELFDEV_SOURCES[Math.floor(Math.random()*SELFDEV_SOURCES.length)];
 
 async function callClaude(system, userMsg, useSearch=false) {
-  const body = { model:"claude-sonnet-4-5", max_tokens:800, system, messages:[{role:"user",content:userMsg}] };
+  const body = { model:"claude-haiku-4-5-20251001", max_tokens:800, system, messages:[{role:"user",content:userMsg}] };
   if (useSearch) body.tools = [{type:"web_search_20250305",name:"web_search"}];
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST",
