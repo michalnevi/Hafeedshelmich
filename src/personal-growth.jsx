@@ -92,14 +92,33 @@ async function fetchKnowledge(topic) {
   if(topic.id==="news_il") {
     try {
       const items=await fetchRSS("https://www.ynet.co.il/Integration/StoryRss2.xml");
-      if(items.length>0){const item=items[Math.floor(Math.random()*items.length)];const sys=`Summarize this Israeli news item clearly in English.\nReturn JSON only:\n{"type":"fact","emoji":"📰","title":"${item.title.substring(0,55).replace(/"/g,"'")}","body":"3-4 sentence summary","takeaway":"why this matters"}`;return{...await callClaude(sys,`News: ${item.title}\n${item.desc}`),format:"fact"};}
+      if(items.length>0){
+        const top5=items.slice(0,5);
+        const headlines=top5.map(i=>i.title).join("\n");
+        const mainItem=top5[0];
+        return{type:"news_feed",format:"news",emoji:"📰",
+          title:mainItem.title.substring(0,80),
+          body:mainItem.desc.substring(0,200),
+          all_items:top5,
+          source:"ynet"};
+      }
     } catch {}
+    return{type:"fact",format:"fact",emoji:"📰",title:"חדשות ישראל",body:"לא ניתן לטעון חדשות כרגע",takeaway:""};
   }
   if(topic.id==="news_world") {
     try {
       const items=await fetchRSS("https://feeds.reuters.com/reuters/topNews");
-      if(items.length>0){const item=items[Math.floor(Math.random()*items.length)];const sys=`Summarize this Reuters news in clear English.\nReturn JSON only:\n{"type":"fact","emoji":"🌍","title":"${item.title.substring(0,55).replace(/"/g,"'")}","body":"3-4 sentence summary","takeaway":"global significance"}`;return{...await callClaude(sys,`News: ${item.title}\n${item.desc}`),format:"fact"};}
+      if(items.length>0){
+        const top5=items.slice(0,5);
+        const mainItem=top5[0];
+        return{type:"news_feed",format:"news",emoji:"🌍",
+          title:mainItem.title.substring(0,80),
+          body:mainItem.desc.substring(0,200),
+          all_items:top5,
+          source:"Reuters"};
+      }
     } catch {}
+    return{type:"fact",format:"fact",emoji:"🌍",title:"World News",body:"Could not load news",takeaway:""};
   }
   if(topic.id==="science") {
     try {
@@ -124,8 +143,10 @@ async function fetchSelfDev() {
 }
 
 async function fetchDailyMenu() {
-  const sys=`Israeli nutritionist. User is vegetarian: eats eggs and dairy, NO meat/poultry/fish.\nReturn JSON only:\n{"emoji":"emoji","theme":"theme","breakfast":{"name":"name","description":"desc"},"lunch":{"name":"name","description":"desc"},"dinner":{"name":"name","description":"desc"},"snack":{"name":"name","description":"desc"},"tip":"tip"}`;
-  return callClaude(sys,"Vegetarian daily menu. Absolutely no meat, poultry or fish.");
+  const themes=["Mediterranean","Asian inspired","Israeli home cooking","High protein vegetarian","Light & fresh","Comfort food","Middle Eastern"];
+  const theme=themes[Math.floor(Math.random()*themes.length)];
+  const sys=`You are an Israeli vegetarian nutritionist. Create a full daily menu with theme: ${theme}. The person eats eggs and dairy products. STRICTLY NO meat, chicken, fish, tuna, salmon, or any seafood whatsoever.\nReturn ONLY this JSON structure, no extra text:\n{"emoji":"🥗","theme":"${theme}","breakfast":{"name":"dish name","description":"2-3 word description"},"lunch":{"name":"dish name","description":"2-3 word description"},"dinner":{"name":"dish name","description":"2-3 word description"},"snack":{"name":"snack name","description":"2-3 word description"},"tip":"one nutritional tip"}`;
+  return callClaude(sys,`Create a vegetarian daily menu with ${theme} theme. All dishes must be 100% vegetarian with no meat or fish.`);
 }
 
 async function fetchMenuDetail(name,desc) {
@@ -163,9 +184,11 @@ async function fetchTodayInHistory() {
 }
 
 async function fetchStyleTip() {
-  const occs=["everyday casual","work/office","evening out","Shabbat","outdoor/sport"];
+  const occs=["יום יומי","עבודה","יציאה לערב","שבת","ספורט ופנאי","קניות"];
   const occ=occs[Math.floor(Math.random()*occs.length)];
-  return callClaude(`Israeli fashion stylist. Client: woman 30s, 157cm, size S, petite hourglass, fair skin, blue eyes, blonde hair. Occasion: ${occ}.\nReturn JSON only:\n{"emoji":"👗","occasion":"${occ}","tip":"main tip","outfit":"outfit description","why":"why it works for her","avoid":"what to avoid","accessory":"accessory"}`,"Style tip");
+  const tipTypes=["קומבינציית צבעים","טיפ לבגד מרכזי","נעליים ואביזרים","שכבות","פרופורציות לגוף","צבעים המחמיאים לצבע עור ועיניים"];
+  const tipType=tipTypes[Math.floor(Math.random()*tipTypes.length)];
+  return callClaude(`את מעצבת אופנה ישראלית. הלקוחה: אישה בת 30, גובה 1.57, מידה S, מבנה שעון חול קטן ונשי, עור בהיר, עיניים כחולות, שיער בלונדיני. אוקיזיה: ${occ}. סוג טיפ: ${tipType}.\nחשובים במיוחד: צבעים שמחמיאים לעיניים כחולות ועור בהיר, פרופורציות לגוף שעון חול קטן.\nהחזר JSON בלבד, ללא backticks, הכל בעברית:\n{"emoji":"👗","occasion":"${occ}","tip_type":"${tipType}","main_tip":"הטיפ המרכזי — משפט אחד מעשי","outfit":"תיאור התלבושת המלאה","colors":"קומבינציית צבעים מומלצת ולמה היא מחמיאה לך","why":"למה זה עובד למבנה הגוף שלך","avoid":"מה להימנע ממנו ולמה","accessory":"אקססורי שמשלים ומחמיא"}`,\`סטייל: \${occ} — \${tipType}\`);
 }
 
 async function fetchWeatherAndOutfit() {
@@ -180,11 +203,27 @@ async function fetchWeatherAndOutfit() {
 }
 
 async function fetchFamousQuote() {
+  // Use random skip to avoid repetition - quotable.io has 1000s of quotes
+  const skip = Math.floor(Math.random()*500);
+  const tagSets = ["wisdom","philosophy","science","literature","success","motivational","technology","humor","history","politics"];
+  const tag = tagSets[Math.floor(Math.random()*tagSets.length)];
   try {
-    const resp=await fetch("https://api.quotable.io/random?maxLength=150&tags=wisdom|philosophy|science|literature");
-    if(resp.ok){const data=await resp.json();if(data.content&&data.author){const sys=`Explain this real quote and its relevance. Return JSON only:\n{"emoji":"💬","category":"${data.tags?.[0]||"wisdom"}","quote":"${data.content.replace(/"/g,"'")}","author":"${data.author}","profession":"field","context":"1-2 sentence context","relevance":"why relevant today"}`;return callClaude(sys,`Quote by ${data.author}: "${data.content}"`);}}
+    const resp=await fetch(`https://api.quotable.io/quotes/random?limit=1&maxLength=180&tags=${tag}&skip=${skip}`);
+    if(resp.ok){
+      const data=await resp.json();
+      const q=Array.isArray(data)?data[0]:data;
+      if(q?.content&&q?.author){
+        const sys=`Explain this real quote briefly. Return JSON only, no backticks:\n{"emoji":"💬","category":"${q.tags?.[0]||tag}","quote":"${q.content.replace(/"/g,"'").replace(/
+/g," ")}","author":"${q.author}","profession":"their field or role","relevance":"why relevant today in one sentence"}`;
+        return callClaude(sys,`Quote: "${q.content}" — ${q.author}`);
+      }
+    }
   } catch {}
-  return callClaude(`Real famous quote. Return JSON only:\n{"emoji":"💬","category":"wisdom","quote":"real quote","author":"real person","profession":"their field","context":"context","relevance":"relevance today"}`,"Famous real quote");
+  try {
+    const resp2=await fetch("https://api.quotable.io/quotes/random?limit=1&maxLength=180");
+    if(resp2.ok){const data=await resp2.json();const q=Array.isArray(data)?data[0]:data;if(q?.content&&q?.author){const sys=`Explain briefly. Return JSON only:\n{"emoji":"💬","category":"wisdom","quote":"${q.content.replace(/"/g,"'")}","author":"${q.author}","profession":"field","relevance":"relevance today"}`;return callClaude(sys,`Quote by ${q.author}`);}}
+  } catch {}
+  return callClaude(`Share a real famous quote from a well-known person. Return JSON only:\n{"emoji":"💬","category":"wisdom","quote":"real verbatim quote","author":"real person name","profession":"their field","relevance":"one sentence on relevance today"}`,"Famous real quote");
 }
 
 async function fetchArabicWord() {
@@ -194,9 +233,9 @@ async function fetchArabicWord() {
 }
 
 async function fetchGrammarQuestion() {
-  const topics=["articles (a/an/the)","verb tenses","prepositions","conditionals","passive voice","relative clauses","modal verbs","reported speech"];
+  const topics=["present perfect vs simple past","past continuous vs past simple","future: will vs going to","1st vs 2nd conditional","passive voice transformation","modal verbs (must/should/might)","reported speech","relative clauses (who/which/whose)","gerunds vs infinitives","active vs passive voice"];
   const topic=topics[Math.floor(Math.random()*topics.length)];
-  return callClaude(`English grammar teacher. Create one grammar exercise about: ${topic}.\nReturn JSON only:\n{"emoji":"📝","topic":"${topic}","question":"fill in the blank or choose correct form","sentence":"sentence with ___ for the blank","options":["option A","option B","option C","option D"],"correct":0,"explanation":"clear explanation of the rule","example":"another example sentence"}`,"Grammar question");
+  return callClaude(`English grammar teacher. Topic: ${topic}. Create a structural grammar question (not vocabulary). Show a sentence and ask the student to choose the correct grammatical form.\nReturn JSON only, no backticks:\n{"emoji":"📝","topic":"${topic}","instruction":"Choose the correct form:","sentence":"a full sentence showing the grammar point","options":["A: full sentence version A","B: full sentence version B","C: full sentence version C","D: full sentence version D"],"correct":0,"rule":"the grammar rule in simple terms","example":"another correct example","common_mistake":"typical error learners make"}`,\`Grammar: \${topic}\`);
 }
 
 // ── UI HELPERS ─────────────────────────────────────────────────────────────────
@@ -222,6 +261,24 @@ function TranslateBtn({color,onTranslate,translated}) {
 }
 
 // ── KNOWLEDGE CARD (inline, no modal) ─────────────────────────────────────────
+
+function NewsFeedInline({items,source,color,textColor}) {
+  const [expanded,setExpanded]=useState(false);
+  const tc=textColor||"#333";
+  return(<div style={{direction:"rtl"}}>
+    <div style={{color:"#aaa",fontSize:9,letterSpacing:"2px",fontFamily:"monospace",marginBottom:8}}>📡 {source} — חדשות אחרונות</div>
+    {(expanded?items:[items[0]]).map((item,i)=>(
+      <div key={i} style={{marginBottom:10,paddingBottom:10,borderBottom:i<(expanded?items.length-1:0)?"1px solid "+color+"22":"none"}}>
+        <div style={{color:tc,fontSize:13,fontWeight:i===0?700:500,lineHeight:1.4,marginBottom:3}}>{item.title}</div>
+        {(i===0||expanded)&&item.desc&&<div style={{color:"#888",fontSize:11,lineHeight:1.5}}>{item.desc.substring(0,120)}...</div>}
+      </div>
+    ))}
+    {items?.length>1&&<button onClick={()=>setExpanded(!expanded)} style={{fontSize:10,color,background:`${color}12`,border:`1px solid ${color}33`,borderRadius:20,padding:"3px 10px",cursor:"pointer",marginTop:4}}>
+      {expanded?"▲ פחות":"▼ עוד "+( items.length-1)+" כותרות"}
+    </button>}
+  </div>);
+}
+
 function KnowledgeCard({topic,content,loading,error,onRefresh,textColor}) {
   const [translated,setTranslated]=useState(false);
   const [translatedContent,setTranslatedContent]=useState(null);
@@ -250,10 +307,12 @@ function KnowledgeCard({topic,content,loading,error,onRefresh,textColor}) {
     {error&&!content&&<div style={{color:"#EF9A9A",fontSize:12,marginBottom:8}}>Error loading</div>}
 
     {c&&(<div style={{direction:translated?"rtl":"ltr",textAlign:translated?"right":"left"}}>
+      {c.type==="news_feed"?<NewsFeedInline items={c.all_items} source={c.source} color={topic.color} textColor={tc}/>:(<>
       {c.title&&<div style={{color:tc,fontSize:14,fontWeight:700,marginBottom:8,fontFamily:"serif",lineHeight:1.3}}>{c.emoji} {c.title}</div>}
       {c.type==="fact"&&<><p style={{color:tc,fontSize:13,lineHeight:1.7,marginBottom:8}}>{c.body}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>✦ TAKEAWAY: </span><span style={{color:tc,fontSize:12}}>{c.takeaway}</span></div></>}
       {c.type==="insight"&&<><p style={{color:tc,fontSize:13,fontWeight:600,marginBottom:6,lineHeight:1.5}}>🔎 {c.finding}</p><p style={{color:tc,fontSize:13,lineHeight:1.7,marginBottom:8}}>{c.explanation}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>🛠 APPLY: </span><span style={{color:tc,fontSize:12}}>{c.practical}</span></div></>}
       {c.type==="quote"&&<><blockquote style={{borderLeft:`3px solid ${topic.color}`,paddingLeft:12,fontFamily:"serif",fontSize:15,fontStyle:"italic",color:tc,lineHeight:1.6,marginBottom:8}}>"{c.quote}"<footer style={{fontSize:12,color:topic.color,fontStyle:"normal",marginTop:4}}>— {c.author}</footer></blockquote><p style={{color:"#888",fontSize:12,lineHeight:1.5,marginBottom:8}}>{c.context}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>💡 TODAY: </span><span style={{color:tc,fontSize:12}}>{c.relevance}</span></div></>}
+      </>)}
     </div>)}
 
     <button onClick={onRefresh} style={{marginTop:12,fontSize:10,color:topic.color,background:"transparent",border:`1px solid ${topic.color}33`,borderRadius:20,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>↻ רענן</button>
@@ -377,15 +436,16 @@ function GrammarSection({theme}) {
       {!loading&&<button onClick={load} style={{fontSize:11,color,background:`${color}15`,border:`1px solid ${color}33`,borderRadius:20,padding:"5px 12px",cursor:"pointer"}}>שאלה חדשה</button>}
     </div>
     {loading?<LoadingPulse color={color}/>:q?(<div style={{direction:"ltr"}}>
-      <div style={{color:"#333",fontSize:15,fontFamily:"serif",lineHeight:1.6,marginBottom:8,fontWeight:600}}>{q.question}</div>
-      {q.sentence&&<div style={{background:"#E3F2FD",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:15,color:"#1565C0",fontFamily:"serif",fontStyle:"italic"}}>{q.sentence}</div>}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
-        {q.options?.map((opt,i)=>{const isC=i===q.correct,isSel=i===selected;let bg="#fafafa",brd="#eee",col="#555";if(revealed&&isC){bg="#E8F5E9";brd="#4CAF50";col="#2E7D32";}else if(revealed&&isSel&&!isC){bg="#FFEBEE";brd="#EF5350";col="#C62828";}return(<button key={i} onClick={()=>choose(i)} style={{background:bg,border:`2px solid ${brd}`,borderRadius:12,padding:"10px 12px",cursor:revealed?"default":"pointer",textAlign:"left",color:col,fontSize:13,lineHeight:1.4,fontFamily:"inherit",transition:"all .2s"}} onMouseEnter={e=>{if(!revealed)e.currentTarget.style.background=`${color}10`;}} onMouseLeave={e=>{if(!revealed)e.currentTarget.style.background=bg;}}>{opt}</button>);})}
+      <div style={{color:"#555",fontSize:11,letterSpacing:"1px",fontFamily:"monospace",marginBottom:6}}>{q.instruction}</div>
+      {q.sentence&&<div style={{background:"#E3F2FD",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:15,color:"#1565C0",fontFamily:"serif",fontStyle:"italic"}}>{q.sentence}</div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+        {q.options?.map((opt,i)=>{const isC=i===q.correct,isSel=i===selected;let bg="#fafafa",brd="#eee",col="#555";if(revealed&&isC){bg="#E8F5E9";brd="#4CAF50";col="#2E7D32";}else if(revealed&&isSel&&!isC){bg="#FFEBEE";brd="#EF5350";col="#C62828";}return(<button key={i} onClick={()=>choose(i)} style={{background:bg,border:`2px solid ${brd}`,borderRadius:12,padding:"10px 12px",cursor:revealed?"default":"pointer",textAlign:"left",color:col,fontSize:12,lineHeight:1.4,fontFamily:"inherit",transition:"all .2s"}} onMouseEnter={e=>{if(!revealed)e.currentTarget.style.background=`${color}10`;}} onMouseLeave={e=>{if(!revealed)e.currentTarget.style.background=bg;}}>{opt}</button>);})}
       </div>
       {revealed&&(<div style={{background:`${color}10`,border:`1px solid ${color}25`,borderRadius:12,padding:14}}>
-        <div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>📚 RULE</div>
-        <div style={{color:"#333",fontSize:13,lineHeight:1.6,marginBottom:8}}>{q.explanation}</div>
-        {q.example&&<div style={{color:"#555",fontSize:13,fontStyle:"italic",borderLeft:`3px solid ${color}`,paddingLeft:10}}>e.g. {q.example}</div>}
+        <div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>📚 THE RULE</div>
+        <div style={{color:"#333",fontSize:13,lineHeight:1.6,marginBottom:8}}>{q.rule}</div>
+        {q.example&&<div style={{color:"#555",fontSize:12,fontStyle:"italic",borderLeft:`3px solid ${color}`,paddingLeft:10,marginBottom:6}}>✓ {q.example}</div>}
+        {q.common_mistake&&<div style={{color:"#E57373",fontSize:12,borderLeft:`3px solid #E57373`,paddingLeft:10}}>✗ Common mistake: {q.common_mistake}</div>}
       </div>)}
     </div>):<div style={{color:"#ccc",fontSize:13}}>Error loading</div>}
   </Card>);
@@ -442,7 +502,7 @@ function StyleSection({theme}) {
   const [style,setStyle]=useState(null);const [loading,setLoading]=useState(true);
   const load=useCallback(()=>{setLoading(true);setStyle(null);fetchStyleTip().then(setStyle).catch(()=>setStyle(null)).finally(()=>setLoading(false));},[]);
   useEffect(()=>{load();},[]);
-  return(<Card color={color}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>👗</span><div><div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ סטייל יומי</div>{style&&<div style={{color:"#bbb",fontSize:11,marginTop:2}}>{style.occasion}</div>}</div></div>{!loading&&<button onClick={load} style={{fontSize:11,color,background:`${color}12`,border:`1px solid ${color}33`,borderRadius:20,padding:"5px 12px",cursor:"pointer"}}>New tip</button>}</div>{loading?<LoadingPulse color={color}/>:style?(<div style={{direction:"ltr"}}><div style={{background:`${color}10`,borderRadius:12,padding:12,marginBottom:12}}><div style={{color,fontSize:10,fontFamily:"monospace",marginBottom:4}}>✨ TIP</div><div style={{color:theme.text,fontSize:14,fontFamily:"serif",fontWeight:600}}>{style.tip}</div></div><div style={{marginBottom:12}}><div style={{color:"#aaa",fontSize:10,fontFamily:"monospace",marginBottom:4}}>👚 OUTFIT</div><div style={{color:theme.text,fontSize:13,lineHeight:1.6}}>{style.outfit}</div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}><div style={{background:"#E8F5E9",borderRadius:10,padding:10}}><div style={{color:"#4CAF50",fontSize:9,fontFamily:"monospace",marginBottom:3}}>✓ WORKS FOR YOU</div><div style={{color:"#333",fontSize:12}}>{style.why}</div></div><div style={{background:"#FFF3E0",borderRadius:10,padding:10}}><div style={{color:"#FF9800",fontSize:9,fontFamily:"monospace",marginBottom:3}}>✗ AVOID</div><div style={{color:"#333",fontSize:12}}>{style.avoid}</div></div></div><div style={{background:`${color}08`,borderRadius:10,padding:10}}><span style={{color,fontSize:9,fontFamily:"monospace"}}>💎 ACCESSORY: </span><span style={{color:theme.text,fontSize:12}}>{style.accessory}</span></div></div>):<div style={{color:"#ccc",fontSize:13}}>Error</div>}</Card>);
+  return(<Card color={color}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>👗</span><div><div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ סטייל יומי</div>{style&&<div style={{color:"#bbb",fontSize:11,marginTop:2}}>{style.occasion} — {style.tip_type}</div>}</div></div>{!loading&&<button onClick={load} style={{fontSize:11,color,background:`${color}12`,border:`1px solid ${color}33`,borderRadius:20,padding:"5px 12px",cursor:"pointer"}}>טיפ חדש</button>}</div>{loading?<LoadingPulse color={color}/>:style?(<div style={{direction:"rtl",textAlign:"right"}}><div style={{background:`${color}10`,borderRadius:12,padding:12,marginBottom:12}}><div style={{color,fontSize:10,fontFamily:"monospace",marginBottom:4}}>✨ הטיפ המרכזי</div><div style={{color:theme.text,fontSize:14,fontFamily:"serif",fontWeight:600}}>{style.main_tip}</div></div><div style={{marginBottom:12}}><div style={{color:"#aaa",fontSize:10,fontFamily:"monospace",marginBottom:4}}>👚 תלבושת מומלצת</div><div style={{color:theme.text,fontSize:13,lineHeight:1.6}}>{style.outfit}</div></div>{style.colors&&<div style={{background:"#F3E5F5",borderRadius:12,padding:12,marginBottom:10}}><div style={{color:"#9C27B0",fontSize:10,fontFamily:"monospace",marginBottom:4}}>🎨 קומבינציית צבעים</div><div style={{color:theme.text,fontSize:13,lineHeight:1.6}}>{style.colors}</div></div>}<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}><div style={{background:"#E8F5E9",borderRadius:10,padding:10}}><div style={{color:"#4CAF50",fontSize:9,fontFamily:"monospace",marginBottom:3}}>✓ למה עובד לך</div><div style={{color:"#333",fontSize:12}}>{style.why}</div></div><div style={{background:"#FFF3E0",borderRadius:10,padding:10}}><div style={{color:"#FF9800",fontSize:9,fontFamily:"monospace",marginBottom:3}}>✗ להימנע מ</div><div style={{color:"#333",fontSize:12}}>{style.avoid}</div></div></div><div style={{background:`${color}08`,borderRadius:10,padding:10}}><span style={{color,fontSize:9,fontFamily:"monospace"}}>💎 אקססורי: </span><span style={{color:theme.text,fontSize:12}}>{style.accessory}</span></div></div>):<div style={{color:"#ccc",fontSize:13}}>Error</div>}</Card>);
 }
 
 function WeatherSection({theme}) {
