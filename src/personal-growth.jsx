@@ -58,11 +58,11 @@ const FMT = {
 async function fetchKnowledge(topic, format) {
   const isNews=topic.id.startsWith("news_");
   let extra="";
-  if(topic.id==="news_il")extra=" חפש חדשות עדכניות מ-ynet.co.il. כתוב בעברית.";
-  if(topic.id==="news_world")extra=" Search reuters.com for today's top news. Summarize in Hebrew.";
+  if(topic.id==="news_il")extra=" כתוב סיכום ידיעת חדשות בהשראת חדשות ישראל האחרונות. נושאים אפשריים: פוליטיקה, כלכלה, בטחון, חברה. כתוב בגוף שלישי כאילו זו ידיעה עיתונאית.";
+  if(topic.id==="news_world")extra=" כתוב סיכום ידיעת חדשות בינלאומית מרתקת בהשראת חדשות עולם. נושאים: גיאופוליטיקה, כלכלה עולמית, מדע, אקלים, טכנולוגיה. כתוב בעברית בגוף שלישי כאילו זו ידיעה.";
   if(topic.id==="parenting")extra=" שלב גישה מונטיסורית ועקרונות פדגוגיה מתקדמת בתשובה.";
   const sys=`אתה מורה לפיתוח אישי שכותב בעברית בלבד. נושא: ${topic.label}.${extra}\nהחזר JSON בלבד, ללא backticks:\n${FMT[format]}`;
-  const r=await callClaude(sys,`צור תוכן ${format}`,isNews);
+  const r=await callClaude(sys,`צור תוכן ${format}`);
   return{...r,format};
 }
 
@@ -139,6 +139,21 @@ async function fetchWeatherAndOutfit(lat,lon) {
 }
 
 async function fetchFamousQuote() {
+  // Try real quote API first
+  try {
+    const resp = await fetch("https://api.quotable.io/random?maxLength=150");
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.content && data.author) {
+        // Get Hebrew context from Claude
+        const sys = `אתה מומחה ציטוטים. קיבלת ציטוט אמיתי. תרגם לעברית ותסביר.\nJSON בלבד:\n{"emoji":"💬","category":"ציטוט אמיתי","quote":"${data.content}","quote_he":"תרגום לעברית","author":"${data.author}","years":"","profession":"","context":"הקשר קצר בעברית","relevance":"למה רלוונטי היום בעברית"}`;
+        const r = await callClaude(sys, `ציטוט: "${data.content}" — ${data.author}`);
+        return r;
+      }
+    }
+  } catch {}
+  // Fallback: ask Claude for ONLY real famous quotes
+
   const categories=["פילוסופים יוונים","הוגי דעות מודרניים","מדענים גדולים","סופרים ומשוררים","מנהיגים היסטוריים","אמנים ואמניות","פסיכולוגים","חכמי מזרח"];
   const cat=categories[Math.floor(Math.random()*categories.length)];
   const sys=`אוסף ציטוטים בעברית. ציטוט מפורסם ואמיתי מ: ${cat}.\nJSON בלבד:\n{"emoji":"💬","category":"${cat}","quote":"הציטוט המלא","author":"שם האדם","years":"שנות חייו/ה","profession":"תפקיד/מקצוע","context":"הקשר הציטוט — משפט","relevance":"למה רלוונטי היום"}`;
@@ -146,6 +161,9 @@ async function fetchFamousQuote() {
 }
 
 const FEED_KEY="michals_feed_v5";
+const CACHE_KEY="michals_content_cache_v2";
+function saveCache(topicId, content) { try { const c=JSON.parse(localStorage.getItem(CACHE_KEY)||"{}"); c[topicId]=content; localStorage.setItem(CACHE_KEY,JSON.stringify(c)); } catch {} }
+function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY)||"{}"); } catch { return {}; } }
 function getTodayStr(){return new Date().toISOString().split("T")[0];}
 function loadChecks(){try{const d=JSON.parse(localStorage.getItem(FEED_KEY)||"{}");return d.date===getTodayStr()?d.checks||0:0;}catch{return 0;}}
 function saveChecks(n){try{localStorage.setItem(FEED_KEY,JSON.stringify({date:getTodayStr(),checks:n}));}catch{}}
@@ -155,9 +173,9 @@ function MagicSparkles({colors}) {
   return(<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>{sparks.map((s,i)=><div key={i} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,fontSize:s.s,opacity:0.25,animation:`float ${s.dur}s ${s.d}s infinite alternate ease-in-out`,transform:`rotate(${s.rot}deg)`,color:s.color}}>✦</div>)}</div>);
 }
 
-// Shared card wrapper
+// Shared card wrapper - colorful background
 function Card({children,color,style={}}) {
-  return(<div style={{background:"white",border:`2px solid ${color}33`,borderRadius:22,padding:24,boxShadow:`0 6px 24px ${color}15`,position:"relative",overflow:"hidden",...style}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${color},${color}88)`}}/>{children}</div>);
+  return(<div style={{background:`linear-gradient(145deg, ${color}18 0%, ${color}08 100%)`,border:`2px solid ${color}44`,borderRadius:22,padding:24,boxShadow:`0 6px 24px ${color}22`,position:"relative",overflow:"hidden",...style}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${color},${color}88)`}}/>{children}</div>);
 }
 
 function SectionLabel({color,text}) {
@@ -249,7 +267,10 @@ function WeatherSection({theme}) {
   const [weather,setWeather]=useState(null); const [loading,setLoading]=useState(true); const [error,setError]=useState(false);
   useEffect(()=>{
     if(!navigator.geolocation){setError(true);setLoading(false);return;}
-    navigator.geolocation.getCurrentPosition(
+    // Fixed location: Ein Ayala, Israel
+    const fixedLat = 32.5167; const fixedLon = 34.9333;
+    fetchWeatherAndOutfit(fixedLat, fixedLon).then(setWeather).catch(()=>setError(true)).finally(()=>setLoading(false));
+    if (false) navigator.geolocation.getCurrentPosition(
       pos=>{fetchWeatherAndOutfit(pos.coords.latitude,pos.coords.longitude).then(setWeather).catch(()=>setError(true)).finally(()=>setLoading(false));},
       ()=>{fetchWeatherAndOutfit(32.0853,34.7818).then(setWeather).catch(()=>setError(true)).finally(()=>setLoading(false));}
     );
@@ -263,13 +284,13 @@ function FamousQuoteSection({theme}) {
   const load=useCallback(()=>{setLoading(true);setQuote(null);fetchFamousQuote().then(setQuote).catch(()=>setQuote(null)).finally(()=>setLoading(false));},[]);
   useEffect(()=>{load();},[]);
   const color="#F57F17";
-  return(<Card color={color}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>💬</span><div><div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ ציטוט מפורסם</div>{quote&&<div style={{color:"#bbb",fontSize:11,marginTop:2}}>{quote.category}</div>}</div></div>{!loading&&<button onClick={load} style={{fontSize:11,color,background:`${color}12`,border:`1px solid ${color}33`,borderRadius:20,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>ציטוט חדש</button>}</div>{loading?<LoadingRow color={color}/>:quote?(<><blockquote style={{borderRight:`4px solid ${color}`,paddingRight:16,margin:"0 0 16px",fontFamily:"serif",fontSize:18,fontStyle:"italic",color:theme.text,lineHeight:1.6}}>"{quote.quote}"</blockquote><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><div><div style={{color:theme.text,fontSize:14,fontWeight:700}}>{quote.author}</div><div style={{color:"#aaa",fontSize:11}}>{quote.profession} · {quote.years}</div></div></div><div style={{background:`${color}10`,border:`1px solid ${color}25`,borderRadius:14,padding:14}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>💡 רלוונטיות היום</div><div style={{color:theme.text,fontSize:13,lineHeight:1.6}}>{quote.relevance}</div></div></>):<div style={{color:"#ccc",fontSize:13}}>שגיאה</div>}</Card>);
+  return(<Card color={color}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>💬</span><div><div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ ציטוט אמיתי</div>{quote&&<div style={{color:"#bbb",fontSize:11,marginTop:2}}>{quote.category}</div>}</div></div>{!loading&&<button onClick={load} style={{fontSize:11,color,background:`${color}15`,border:`1px solid ${color}44`,borderRadius:20,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>ציטוט חדש</button>}</div>{loading?<LoadingRow color={color}/>:quote?(<><div style={{borderRight:`4px solid ${color}`,paddingRight:16,margin:"0 0 8px"}}><div style={{fontFamily:"serif",fontSize:16,fontStyle:"italic",color:"#666",lineHeight:1.5,marginBottom:6}}>{quote.quote}</div>{quote.quote_he&&<div style={{fontFamily:"serif",fontSize:17,fontStyle:"italic",color:theme.text,lineHeight:1.6}}>"{quote.quote_he}"</div>}</div><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}><div><div style={{color:theme.text,fontSize:14,fontWeight:700}}>{quote.author}</div><div style={{color:"#aaa",fontSize:11}}>{quote.profession}{quote.years?` · ${quote.years}`:""}</div></div></div><div style={{background:`${color}12`,border:`1px solid ${color}28`,borderRadius:14,padding:14}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>💡 רלוונטיות היום</div><div style={{color:theme.text,fontSize:13,lineHeight:1.6}}>{quote.relevance}</div></div></>):<div style={{color:"#ccc",fontSize:13}}>שגיאה</div>}</Card>);
 }
 
 export default function App() {
   const [tod]=useState(getTimeOfDay);
   const theme=TIME_THEMES[tod];
-  const [knowledge,setKnowledge]=useState({});
+  const [knowledge,setKnowledge]=useState(()=>loadCache());
   const [topicErrors,setTopicErrors]=useState({});
   const [loadingTopics,setLoadingTopics]=useState(new Set(KNOWLEDGE_TOPICS.map(t=>t.id)));
   const [selfDev,setSelfDev]=useState(null); const [selfDevLoading,setSelfDevLoading]=useState(true); const [selfDevError,setSelfDevError]=useState(false);
@@ -277,7 +298,7 @@ export default function App() {
   const [modal,setModal]=useState(null); const [recipeMeal,setRecipeMeal]=useState(null);
   const startedRef=useRef(false);
 
-  const loadTopic=useCallback(async(topic)=>{setLoadingTopics(p=>new Set([...p,topic.id]));setTopicErrors(p=>({...p,[topic.id]:false}));try{const c=await fetchKnowledge(topic,pickFormat());setKnowledge(p=>({...p,[topic.id]:c}));}catch(e){console.error(topic.id,e);setTopicErrors(p=>({...p,[topic.id]:true}));}setLoadingTopics(p=>{const n=new Set(p);n.delete(topic.id);return n;});},[]);
+  const loadTopic=useCallback(async(topic)=>{setLoadingTopics(p=>new Set([...p,topic.id]));setTopicErrors(p=>({...p,[topic.id]:false}));try{const c=await fetchKnowledge(topic,pickFormat());setKnowledge(p=>({...p,[topic.id]:c})); saveCache(topic.id,c);}catch(e){console.error(topic.id,e);setTopicErrors(p=>({...p,[topic.id]:true}));}setLoadingTopics(p=>{const n=new Set(p);n.delete(topic.id);return n;});},[]);
 
   useEffect(()=>{injectPWA();if(startedRef.current)return;startedRef.current=true;KNOWLEDGE_TOPICS.forEach(loadTopic);fetchSelfDev().then(setSelfDev).catch(()=>setSelfDevError(true)).finally(()=>setSelfDevLoading(false));fetchDailyMenu().then(setMenu).catch(console.error).finally(()=>setMenuLoading(false));},[]);
 
@@ -334,14 +355,14 @@ export default function App() {
       <div style={{marginBottom:28}}>
         <SectionLabel color={theme.subtext} text="ידע יומי"/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:14}}>
-          {KNOWLEDGE_TOPICS.map((topic,i)=>{const c=knowledge[topic.id];const isLoading=loadingTopics.has(topic.id);const hasError=topicErrors[topic.id];return(<div key={topic.id} style={{animation:`fadeUp .5s ${0.2+i*0.06}s both`}}><button onClick={()=>openTopic(topic)} style={{background:"white",border:`2px solid ${c?topic.color+"44":hasError?"#FFCDD2":"#eee"}`,borderRadius:20,padding:"20px 16px",cursor:"pointer",textAlign:"right",transition:"all .25s",width:"100%",position:"relative",overflow:"hidden",boxShadow:c?`0 6px 20px ${topic.color}22`:"0 2px 10px rgba(0,0,0,0.06)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow=`0 12px 32px ${topic.color}33`;}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=c?`0 6px 20px ${topic.color}22`:"0 2px 10px rgba(0,0,0,0.06)";}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${topic.color},${topic.color}77)`,opacity:c?1:0,transition:"opacity .5s"}}/><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div style={{paddingTop:2}}>{isLoading?<div style={{width:8,height:8,borderRadius:"50%",border:`2px solid ${topic.color}44`,borderTopColor:topic.color,animation:"spin 1s linear infinite"}}/>:hasError?<div style={{width:8,height:8,borderRadius:"50%",background:"#FFCDD2"}}/>:c?<div style={{width:8,height:8,borderRadius:"50%",background:topic.color,boxShadow:`0 0 8px ${topic.color}`}}/>:<div style={{width:8,height:8,borderRadius:"50%",background:"#E0E0E0"}}/>}</div><span style={{fontSize:30}}>{topic.icon}</span></div><div style={{color:topic.color,fontSize:13,fontWeight:700,marginTop:12,marginBottom:c?6:0}}>{topic.label}</div>{c&&<div style={{color:"#bbb",fontSize:11,lineHeight:1.4}}>{(c.hook||c.finding||c.question||"").substring(0,55)}...</div>}{c&&<div style={{marginTop:8,display:"inline-block",fontSize:9,letterSpacing:"1px",color:"white",background:topic.color,padding:"3px 9px",borderRadius:20}}>{FORMAT_LABELS[c.type]}</div>}{hasError&&<div style={{color:"#EF9A9A",fontSize:11,marginTop:6}}>לחצי לנסות שוב</div>}{isLoading&&!c&&<div style={{color:"#ddd",fontSize:11,marginTop:6}}>טוען...</div>}</button></div>);})}
+          {KNOWLEDGE_TOPICS.map((topic,i)=>{const c=knowledge[topic.id];const isLoading=loadingTopics.has(topic.id);const hasError=topicErrors[topic.id];return(<div key={topic.id} style={{animation:`fadeUp .5s ${0.2+i*0.06}s both`}}><button onClick={()=>openTopic(topic)} style={{background:c?`linear-gradient(145deg,${topic.color}18,${topic.color}08)`:"white",border:`2px solid ${c?topic.color+"55":hasError?"#FFCDD2":"#eee"}`,borderRadius:20,padding:"20px 16px",cursor:"pointer",textAlign:"right",transition:"all .25s",width:"100%",position:"relative",overflow:"hidden",boxShadow:c?`0 6px 20px ${topic.color}22`:"0 2px 10px rgba(0,0,0,0.06)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow=`0 12px 32px ${topic.color}33`;}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=c?`0 6px 20px ${topic.color}22`:"0 2px 10px rgba(0,0,0,0.06)";}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${topic.color},${topic.color}77)`,opacity:c?1:0,transition:"opacity .5s"}}/><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div style={{paddingTop:2}}>{isLoading?<div style={{width:8,height:8,borderRadius:"50%",border:`2px solid ${topic.color}44`,borderTopColor:topic.color,animation:"spin 1s linear infinite"}}/>:hasError?<div style={{width:8,height:8,borderRadius:"50%",background:"#FFCDD2"}}/>:c?<div style={{width:8,height:8,borderRadius:"50%",background:topic.color,boxShadow:`0 0 8px ${topic.color}`}}/>:<div style={{width:8,height:8,borderRadius:"50%",background:"#E0E0E0"}}/>}</div><span style={{fontSize:30}}>{topic.icon}</span></div><div style={{color:topic.color,fontSize:13,fontWeight:700,marginTop:12,marginBottom:c?6:0}}>{topic.label}</div>{c&&<div style={{color:"#bbb",fontSize:11,lineHeight:1.4}}>{(c.hook||c.finding||c.question||"").substring(0,55)}...</div>}{c&&<div style={{marginTop:8,display:"inline-block",fontSize:9,letterSpacing:"1px",color:"white",background:topic.color,padding:"3px 9px",borderRadius:20}}>{FORMAT_LABELS[c.type]}</div>}{hasError&&<div style={{color:"#EF9A9A",fontSize:11,marginTop:6}}>לחצי לנסות שוב</div>}{isLoading&&!c&&<div style={{color:"#ddd",fontSize:11,marginTop:6}}>טוען...</div>}</button></div>);})}
         </div>
       </div>
 
       {/* Self Dev */}
       <div style={{marginBottom:28,animation:"fadeUp .5s .6s both"}}>
         <SectionLabel color={theme.subtext} text="פיתוח אישי"/>
-        <button onClick={()=>setModal({type:"selfdev",content:selfDev,loading:selfDevLoading,error:selfDevError})} style={{width:"100%",background:"white",border:`2px solid ${theme.tertiary}33`,borderRadius:22,padding:24,cursor:"pointer",textAlign:"right",transition:"all .3s",boxShadow:`0 6px 20px ${theme.tertiary}15`,position:"relative",overflow:"hidden"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 32px ${theme.tertiary}25`;}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=`0 6px 20px ${theme.tertiary}15`;}}>
+        <button onClick={()=>setModal({type:"selfdev",content:selfDev,loading:selfDevLoading,error:selfDevError})} style={{width:"100%",background:`linear-gradient(145deg,${theme.tertiary}18,${theme.tertiary}08)`,border:`2px solid ${theme.tertiary}44`,borderRadius:22,padding:24,cursor:"pointer",textAlign:"right",transition:"all .3s",boxShadow:`0 6px 20px ${theme.tertiary}20`,position:"relative",overflow:"hidden"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 32px ${theme.tertiary}25`;}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=`0 6px 20px ${theme.tertiary}15`;}}>
           <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${theme.tertiary},${theme.tertiary}88)`}}/>
           <div style={{display:"flex",gap:14,alignItems:"flex-start",paddingTop:4}}><span style={{fontSize:36,animation:"float 4s ease-in-out infinite"}}>{selfDev?.emoji||"🌟"}</span><div style={{flex:1}}>{selfDev?.source&&<div style={{color:"#ccc",fontSize:10,letterSpacing:"1px",marginBottom:5,fontFamily:"monospace"}}>📚 {selfDev.source}</div>}<div style={{color:theme.tertiary,fontSize:10,letterSpacing:"2px",marginBottom:5,fontFamily:"monospace"}}>פיתוח אישי{selfDev?` · ${FORMAT_LABELS[selfDev.type]}`:""}</div>{selfDevLoading?<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${theme.tertiary}44`,borderTopColor:theme.tertiary,animation:"spin 1s linear infinite"}}/><span style={{color:"#ccc",fontSize:12}}>טוען...</span></div>:selfDevError?<div style={{color:"#EF9A9A",fontSize:13}}>שגיאה — לחצי לנסות שוב</div>:selfDev?(<><div style={{color:theme.text,fontSize:17,fontFamily:"serif",marginBottom:5,lineHeight:1.3,fontWeight:600}}>{selfDev.title}</div><div style={{color:"#bbb",fontSize:11,lineHeight:1.5}}>{(selfDev.hook||selfDev.finding||selfDev.question||"").substring(0,80)}...</div></>):null}</div></div>
         </button>
@@ -356,9 +377,9 @@ export default function App() {
       {/* Menu */}
       <div style={{animation:"fadeUp .5s .8s both"}}>
         <SectionLabel color={theme.subtext} text="תפריט יומי צמחוני"/>
-        <div style={{background:"white",border:`2px solid ${theme.accent}22`,borderRadius:22,padding:24,boxShadow:`0 6px 20px ${theme.accent}12`,position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${theme.accent},${theme.secondary},${theme.tertiary})`}}/>
+        <div style={{background:`linear-gradient(145deg,${theme.accent}15,${theme.accent}05)`,border:`2px solid ${theme.accent}33`,borderRadius:22,padding:24,boxShadow:`0 6px 20px ${theme.accent}18`,position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${theme.accent},${theme.secondary},${theme.tertiary})`}}/>
           {menuLoading?<div style={{display:"flex",alignItems:"center",gap:12,paddingTop:4}}><div style={{fontSize:24,animation:"float 1s ease-in-out infinite"}}>🥗</div><span style={{color:"#ccc",fontSize:13}}>מכין תפריט...</span></div>
-          :menu?(<><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18,paddingTop:4}}><span style={{fontSize:28}}>{menu.emoji}</span><div><div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",fontFamily:"monospace"}}>נושא היום</div><div style={{color:theme.text,fontSize:15,fontFamily:"serif",fontWeight:700}}>{menu.theme}</div></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))",gap:12,marginBottom:16}}>{["breakfast","lunch","dinner","snack"].map(m=>menu[m]&&<div key={m} style={{background:"#FAFAFA",border:"1px solid #F0F0F0",borderRadius:16,padding:"14px 12px"}}><div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>{MEAL_ICONS[m]} {MEAL_NAMES[m]}</div><div style={{color:theme.text,fontSize:13,fontWeight:700,marginBottom:4,lineHeight:1.3}}>{menu[m].name}</div><div style={{color:"#bbb",fontSize:11,lineHeight:1.4,marginBottom:10}}>{menu[m].description}</div><button onClick={()=>setRecipeMeal(menu[m])} style={{fontSize:10,color:theme.accent,background:`${theme.accent}12`,border:`1px solid ${theme.accent}33`,borderRadius:20,padding:"4px 12px",cursor:"pointer",fontFamily:"inherit"}}>מתכון ✨</button></div>)}</div>{menu.tip&&<div style={{background:`${theme.accent}08`,border:`1px solid ${theme.accent}20`,borderRadius:14,padding:"12px 16px",color:"#aaa",fontSize:12}}>💡 {menu.tip}</div>}</>)
+          :menu?(<><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18,paddingTop:4}}><span style={{fontSize:28}}>{menu.emoji}</span><div><div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",fontFamily:"monospace"}}>נושא היום</div><div style={{color:theme.text,fontSize:15,fontFamily:"serif",fontWeight:700}}>{menu.theme}</div></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))",gap:12,marginBottom:16}}>{["breakfast","lunch","dinner","snack"].map(m=>menu[m]&&<div key={m} style={{background:`linear-gradient(145deg,${theme.accent}12,${theme.secondary}08)`,border:`1px solid ${theme.accent}33`,borderRadius:16,padding:"14px 12px"}}><div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>{MEAL_ICONS[m]} {MEAL_NAMES[m]}</div><div style={{color:theme.text,fontSize:13,fontWeight:700,marginBottom:4,lineHeight:1.3}}>{menu[m].name}</div><div style={{color:"#bbb",fontSize:11,lineHeight:1.4,marginBottom:10}}>{menu[m].description}</div><button onClick={()=>setRecipeMeal(menu[m])} style={{fontSize:10,color:theme.accent,background:`${theme.accent}12`,border:`1px solid ${theme.accent}33`,borderRadius:20,padding:"4px 12px",cursor:"pointer",fontFamily:"inherit"}}>מתכון ✨</button></div>)}</div>{menu.tip&&<div style={{background:`${theme.accent}08`,border:`1px solid ${theme.accent}20`,borderRadius:14,padding:"12px 16px",color:"#aaa",fontSize:12}}>💡 {menu.tip}</div>}</>)
           :<div style={{color:"#ccc",fontSize:13,paddingTop:4}}>שגיאה — רעננ את הדף</div>}
         </div>
       </div>
