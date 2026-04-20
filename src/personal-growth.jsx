@@ -186,9 +186,10 @@ async function fetchTodayInHistory() {
 async function fetchStyleTip() {
   const occs=["יום יומי","עבודה","יציאה לערב","שבת","ספורט ופנאי","קניות"];
   const occ=occs[Math.floor(Math.random()*occs.length)];
-  const tipTypes=["קומבינציית צבעים","טיפ לבגד מרכזי","נעליים ואביזרים","שכבות","פרופורציות לגוף","צבעים המחמיאים לצבע עור ועיניים"];
+  const tipTypes=["קומבינציית צבעים","טיפ לבגד מרכזי","נעליים ואביזרים","שכבות","פרופורציות לגוף","צבעים המחמיאים לעיניים ועור"];
   const tipType=tipTypes[Math.floor(Math.random()*tipTypes.length)];
-  return callClaude(`את מעצבת אופנה ישראלית. הלקוחה: אישה בת 30, גובה 1.57, מידה S, מבנה שעון חול קטן ונשי, עור בהיר, עיניים כחולות, שיער בלונדיני. אוקיזיה: ${occ}. סוג טיפ: ${tipType}.\nחשובים במיוחד: צבעים שמחמיאים לעיניים כחולות ועור בהיר, פרופורציות לגוף שעון חול קטן.\nהחזר JSON בלבד, ללא backticks, הכל בעברית:\n{"emoji":"👗","occasion":"${occ}","tip_type":"${tipType}","main_tip":"הטיפ המרכזי — משפט אחד מעשי","outfit":"תיאור התלבושת המלאה","colors":"קומבינציית צבעים מומלצת ולמה היא מחמיאה לך","why":"למה זה עובד למבנה הגוף שלך","avoid":"מה להימנע ממנו ולמה","accessory":"אקססורי שמשלים ומחמיא"}`,\`סטייל: \${occ} — \${tipType}\`);
+  const sys = "את מעצבת אופנה ישראלית. הלקוחה: אישה בת 30, גובה 1.57, מידה S, מבנה שעון חול קטן ונשי, עור בהיר, עיניים כחולות, שיער בלונדיני. אוקיזיה: "+occ+". סוג טיפ: "+tipType+".\nצבעים שמחמיאים לעיניים כחולות ועור בהיר, פרופורציות לגוף שעון חול קטן.\nהחזר JSON בלבד, ללא backtick, הכל בעברית:\n{\"emoji\":\"emoji\",\"occasion\":\""+occ+"\",\"tip_type\":\""+tipType+"\",\"main_tip\":\"הטיפ המרכזי\",\"outfit\":\"תיאור התלבושת\",\"colors\":\"קומבינציית צבעים ולמה מחמיאה לך\",\"why\":\"למה זה עובד למבנה הגוף שלך\",\"avoid\":\"מה להימנע ולמה\",\"accessory\":\"אקססורי מחמיא\"}";
+  return callClaude(sys, "סטייל " + occ + " " + tipType);
 }
 
 async function fetchWeatherAndOutfit() {
@@ -212,10 +213,10 @@ async function fetchFamousQuote() {
     if(resp.ok){
       const data=await resp.json();
       const q=Array.isArray(data)?data[0]:data;
-      if(q?.content&&q?.author){
-        const sys=`Explain this real quote briefly. Return JSON only, no backticks:\n{"emoji":"💬","category":"${q.tags?.[0]||tag}","quote":"${q.content.replace(/"/g,"'").replace(/
-/g," ")}","author":"${q.author}","profession":"their field or role","relevance":"why relevant today in one sentence"}`;
-        return callClaude(sys,`Quote: "${q.content}" — ${q.author}`);
+      if(q && q.content && q.author){
+        const qtext = q.content.replace(/"/g,"'").replace(/\n/g," ").substring(0,150);
+        const sys = "Explain this quote briefly. Return JSON only, no backtick: {\"emoji\":\"💬\",\"category\":\"wisdom\",\"quote\":\""+qtext+"\",\"author\":\""+q.author+"\",\"profession\":\"their field\",\"relevance\":\"why relevant today\"}";
+        return callClaude(sys, "Quote: "+q.author);
       }
     }
   } catch {}
@@ -235,7 +236,7 @@ async function fetchArabicWord() {
 async function fetchGrammarQuestion() {
   const topics=["present perfect vs simple past","past continuous vs past simple","future: will vs going to","1st vs 2nd conditional","passive voice transformation","modal verbs (must/should/might)","reported speech","relative clauses (who/which/whose)","gerunds vs infinitives","active vs passive voice"];
   const topic=topics[Math.floor(Math.random()*topics.length)];
-  return callClaude(`English grammar teacher. Topic: ${topic}. Create a structural grammar question (not vocabulary). Show a sentence and ask the student to choose the correct grammatical form.\nReturn JSON only, no backticks:\n{"emoji":"📝","topic":"${topic}","instruction":"Choose the correct form:","sentence":"a full sentence showing the grammar point","options":["A: full sentence version A","B: full sentence version B","C: full sentence version C","D: full sentence version D"],"correct":0,"rule":"the grammar rule in simple terms","example":"another correct example","common_mistake":"typical error learners make"}`,\`Grammar: \${topic}\`);
+  return callClaude(`English grammar teacher. Topic: ${topic}. Create a structural grammar question (not vocabulary). Show a sentence and ask the student to choose the correct grammatical form.\nReturn JSON only, no backticks:\n{"emoji":"📝","topic":"${topic}","instruction":"Choose the correct form:","sentence":"a full sentence showing the grammar point","options":["A: full sentence version A","B: full sentence version B","C: full sentence version C","D: full sentence version D"],"correct":0,"rule":"the grammar rule in simple terms","example":"another correct example","common_mistake":"typical error learners make"}`, `Grammar ${topic}`);
 }
 
 // ── UI HELPERS ─────────────────────────────────────────────────────────────────
