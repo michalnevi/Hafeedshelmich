@@ -33,10 +33,21 @@ const KNOWLEDGE_TOPICS = [
 const SELFDEV_SOURCES = ["'The Power of Habit' by Charles Duhigg","'Mindset' by Carol Dweck","'Atomic Habits' by James Clear","Positive Psychology — Martin Seligman","Flow Theory — Mihaly Csikszentmihalyi","'Grit' by Angela Duckworth","Brené Brown on vulnerability","'Start with Why' by Simon Sinek","'The Power of Now' by Eckhart Tolle","Self-Determination Theory — Deci & Ryan"];
 const pickSource = () => SELFDEV_SOURCES[Math.floor(Math.random()*SELFDEV_SOURCES.length)];
 
-// ── ARABIC WORD BANK (localStorage) ──────────────────────────────────────────
+// ── ARABIC WORD BANK ──────────────────────────────────────────────────────────
 const ARABIC_KEY = "michals_arabic_v1";
 function loadWordBank() { try { return JSON.parse(localStorage.getItem(ARABIC_KEY)||"[]"); } catch { return []; } }
 function saveWordBank(words) { try { localStorage.setItem(ARABIC_KEY,JSON.stringify(words)); } catch {} }
+
+// ── QUOTE SEEN TRACKER (prevent repeats) ─────────────────────────────────────
+const QUOTES_SEEN_KEY = "michals_quotes_seen_v1";
+function loadSeenQuotes() { try { return JSON.parse(localStorage.getItem(QUOTES_SEEN_KEY)||"[]"); } catch { return []; } }
+function addSeenQuote(author) {
+  try {
+    const seen = loadSeenQuotes();
+    const updated = [...seen.filter(a=>a!==author), author].slice(-80);
+    localStorage.setItem(QUOTES_SEEN_KEY, JSON.stringify(updated));
+  } catch {}
+}
 
 // ── CACHE ─────────────────────────────────────────────────────────────────────
 const CACHE_KEY = "michals_content_v7";
@@ -81,20 +92,30 @@ async function fetchKnowledge(topic) {
   const formats=["fact","insight","quote"];
   const format=formats[Math.floor(Math.random()*formats.length)];
   const schemas={
-    fact:`{"type":"fact","emoji":"emoji","title":"title","body":"3-4 interesting sentences","takeaway":"one practical takeaway"}`,
-    insight:`{"type":"insight","emoji":"emoji","title":"title","finding":"key finding in one sentence","explanation":"2-3 sentences","practical":"one practical step"}`,
-    quote:`{"type":"quote","emoji":"emoji","title":"topic","quote":"real famous quote","author":"real person","context":"1-2 sentences of context","relevance":"why relevant today"}`,
+    fact:'{"type":"fact","emoji":"emoji","title":"title","body":"3-4 interesting sentences","takeaway":"one practical takeaway","source":"journal or book name"}',
+    insight:'{"type":"insight","emoji":"emoji","title":"title","finding":"key finding in one sentence","explanation":"2-3 sentences","practical":"one practical step","source":"journal or book name"}',
+    quote:'{"type":"quote","emoji":"emoji","title":"topic","quote":"real famous quote","author":"real person","context":"1-2 sentences of context","relevance":"why relevant today","source":"origin of quote"}',
   };
+  const journals={
+    psychology:"based on research from journals like Nature Neuroscience, Psychological Science, or Journal of Personality and Social Psychology",
+    history:"drawing from academic history journals like Past & Present, American Historical Review, or Journal of Modern History",
+    science:"inspired by recent findings in Nature, Science magazine, or Scientific American",
+    theater:"drawing from Theatre Research International, TDR/The Drama Review, or journal of art criticism",
+    parenting:"based on research from Developmental Psychology, Journal of Child Psychology, or Montessori Life journal",
+    health:"based on research from NEJM, The Lancet, JAMA, or BMJ medical journals",
+    news_il:"",
+    news_world:"",
+  };
+  const journalNote = journals[topic.id] ? " Use research "+journals[topic.id]+"." : "";
   if(topic.id==="parenting") {
-    const sys=`You are a Montessori educator. Topic: child development and parenting.\nReturn JSON only, no backticks:\n${schemas[format]}`;
-    return {...await callClaude(sys,`Create ${format} about Montessori/child development`),format};
+    const sys="You are a Montessori educator and child development expert. Topic: "+topic.label+"."+journalNote+"\nReturn JSON only, no backtick:\n"+schemas[format];
+    return {...await callClaude(sys,"Create "+format+" about Montessori/child development"),format};
   }
   if(topic.id==="news_il") {
     try {
       const items=await fetchRSS("https://www.ynet.co.il/Integration/StoryRss2.xml");
       if(items.length>0){
         const top5=items.slice(0,5);
-        const headlines=top5.map(i=>i.title).join("\n");
         const mainItem=top5[0];
         return{type:"news_feed",format:"news",emoji:"📰",
           title:mainItem.title.substring(0,80),
@@ -126,7 +147,7 @@ async function fetchKnowledge(topic) {
       if(items.length>0){const item=items[Math.floor(Math.random()*items.length)];const title=item.title;const desc=item.desc;const sys=`Make this NASA story exciting and accessible.\nReturn JSON only:\n${schemas.fact}`;return{...await callClaude(sys,`NASA: ${title}\n${desc}`),format:"fact"};}
     } catch {}
   }
-  const sys=`You are a knowledgeable educator. Topic: ${topic.label}.\nWrite in English. Return JSON only, no backticks:\n${schemas[format]}`;
+  const sys=`You are a knowledgeable educator. Topic: ${topic.label}.${journalNote}\nWrite in English. Return JSON only, no backticks:\n${schemas[format]}`;
   return{...await callClaude(sys,`Create ${format} about ${topic.label}`),format};
 }
 
@@ -143,15 +164,19 @@ async function fetchSelfDev() {
 }
 
 async function fetchDailyMenu() {
-  const themes=["Mediterranean","Asian inspired","Israeli home cooking","High protein vegetarian","Light & fresh","Comfort food","Middle Eastern"];
+  const themes=["ים תיכוני","השראה אסיאתית","בישול ישראלי ביתי","עשיר בחלבון","קל ורענן","אוכל מנחם","מזרח תיכוני"];
   const theme=themes[Math.floor(Math.random()*themes.length)];
-  const sys=`You are an Israeli vegetarian nutritionist. Create a full daily menu with theme: ${theme}. The person eats eggs and dairy products. STRICTLY NO meat, chicken, fish, tuna, salmon, or any seafood whatsoever.\nReturn ONLY this JSON structure, no extra text:\n{"emoji":"🥗","theme":"${theme}","breakfast":{"name":"dish name","description":"2-3 word description"},"lunch":{"name":"dish name","description":"2-3 word description"},"dinner":{"name":"dish name","description":"2-3 word description"},"snack":{"name":"snack name","description":"2-3 word description"},"tip":"one nutritional tip"}`;
-  return callClaude(sys,`Create a vegetarian daily menu with ${theme} theme. All dishes must be 100% vegetarian with no meat or fish.`);
+  // Adult meals: vegetarian (eggs/dairy/fish ok, no meat/poultry)
+  // Child meals: must include meat or poultry
+  const sys="את תזונאית ישראלית. צרי תפריט יומי מלא בנושא: "+theme+".\nהמבוגרת: צמחונית — אוכלת ביצים, מוצרי חלב ודגים. ללא בשר ועוף.\nהילד: חייב לכלול בשר או עוף בארוחת הצהריים.\nהחזרי JSON בלבד, ללא backtick, הכל בעברית:\n{\"emoji\":\"🥗\",\"theme\":\""+theme+"\",\"breakfast\":{\"name\":\"שם המנה\",\"description\":\"תיאור קצר\",\"adult\":\"גרסה למבוגרת\",\"child\":\"גרסה לילד\"},\"lunch\":{\"name\":\"שם המנה\",\"description\":\"תיאור קצר\",\"adult\":\"גרסה צמחונית\",\"child\":\"גרסה עם בשר או עוף\"},\"dinner\":{\"name\":\"שם המנה\",\"description\":\"תיאור קצר\",\"adult\":\"גרסה למבוגרת\",\"child\":\"גרסה לילד\"},\"snack\":{\"name\":\"שם החטיף\",\"description\":\"תיאור קצר\"},\"tip\":\"טיפ תזונתי\"}";
+  return callClaude(sys,"תפריט יומי בנושא "+theme);
 }
 
-async function fetchMenuDetail(name,desc) {
-  const sys=`Vegetarian chef. Return JSON only:\n{"ingredients":["item"],"steps":["step"],"time":"time","difficulty":"easy/medium/hard","tip":"tip"}`;
-  return callClaude(sys,`Recipe for: ${name} — ${desc}`);
+async function fetchMenuDetail(name, desc, forChild=false) {
+  const sys = forChild
+    ? "שף ישראלי. הכן מתכון לילד שכולל בשר או עוף. מנה: "+name+". החזר JSON בלבד, ללא backtick, הכל בעברית:\n{\"ingredients\":[\"מרכיב 1\"],\"steps\":[\"שלב 1\"],\"time\":\"זמן הכנה\",\"difficulty\":\"קל/בינוני/מאתגר\",\"tip\":\"טיפ השף\"}"
+    : "שף צמחוני ישראלי (ביצים/חלב/דגים מותר, ללא בשר/עוף). מתכון ל: "+name+". החזר JSON בלבד, ללא backtick, הכל בעברית:\n{\"ingredients\":[\"מרכיב 1\"],\"steps\":[\"שלב 1\"],\"time\":\"זמן הכנה\",\"difficulty\":\"קל/בינוני/מאתגר\",\"tip\":\"טיפ השף\"}";
+  return callClaude(sys, "מתכון ל: "+name+" — "+desc);
 }
 
 async function fetchInspirationTip() {
@@ -165,7 +190,10 @@ async function fetchTrivia() {
     const resp=await fetch("https://opentdb.com/api.php?amount=1&type=multiple&difficulty=medium");
     if(resp.ok){const data=await resp.json();if(data.results?.length>0){const q=data.results[0];const clean=(s)=>s.replace(/&quot;/g,'"').replace(/&#039;/g,"'").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">");const correct=clean(q.correct_answer);const all=[...q.incorrect_answers.map(clean),correct].sort(()=>Math.random()-.5);const correctIdx=all.indexOf(correct);const ex=await callClaude(`Explain this trivia answer in 1-2 sentences. Return JSON only:\n{"explanation":"brief explanation"}`,`Q: ${clean(q.question)}\nA: ${correct}`).catch(()=>({explanation:""}));return{emoji:q.category.includes("Science")?"🔬":q.category.includes("History")?"📜":q.category.includes("Art")?"🎨":q.category.includes("Sport")?"⚽":"🎯",topic:q.category,question:clean(q.question),options:all.map((a,i)=>`${["A","B","C","D"][i]}. ${a}`),correct:correctIdx,explanation:ex.explanation||`Answer: ${correct}`};}}
   } catch {}
-  return callClaude(`Quiz question. Return JSON only:\n{"emoji":"emoji","topic":"topic","question":"question","options":["A. opt","B. opt","C. opt","D. opt"],"correct":0,"explanation":"explanation"}`,"Trivia question");
+  const topics=["famous inventions","world history","animal facts","famous artists","world capitals","human body","famous books","space facts","food science","famous scientists"];
+  const t=topics[Math.floor(Math.random()*topics.length)];
+  const sys="Quiz host. Interesting trivia question about: "+t+". Use well-known facts.\nJSON only:\n{\"emoji\":\"emoji\",\"topic\":\""+t+"\",\"question\":\"question\",\"options\":[\"A. opt\",\"B. opt\",\"C. opt\",\"D. opt\"],\"correct\":0,\"explanation\":\"1-2 sentences\"}";
+  return callClaude(sys,"Trivia: "+t);
 }
 
 async function fetchDailyTask() {
@@ -188,7 +216,7 @@ async function fetchStyleTip() {
   const occ=occs[Math.floor(Math.random()*occs.length)];
   const tipTypes=["קומבינציית צבעים","טיפ לבגד מרכזי","נעליים ואביזרים","שכבות","פרופורציות לגוף","צבעים המחמיאים לעיניים ועור"];
   const tipType=tipTypes[Math.floor(Math.random()*tipTypes.length)];
-  const sys = "את מעצבת אופנה ישראלית. הלקוחה: אישה בת 30, גובה 1.57, מידה S, מבנה שעון חול קטן ונשי, עור בהיר, עיניים כחולות, שיער בלונדיני. אוקיזיה: "+occ+". סוג טיפ: "+tipType+".\nצבעים שמחמיאים לעיניים כחולות ועור בהיר, פרופורציות לגוף שעון חול קטן.\nהחזר JSON בלבד, ללא backtick, הכל בעברית:\n{\"emoji\":\"emoji\",\"occasion\":\""+occ+"\",\"tip_type\":\""+tipType+"\",\"main_tip\":\"הטיפ המרכזי\",\"outfit\":\"תיאור התלבושת\",\"colors\":\"קומבינציית צבעים ולמה מחמיאה לך\",\"why\":\"למה זה עובד למבנה הגוף שלך\",\"avoid\":\"מה להימנע ולמה\",\"accessory\":\"אקססורי מחמיא\"}";
+  const sys = "את מעצבת אופנה ישראלית. הלקוחה: אישה בת 30, גובה 1.57, מידה S, מבנה שעון חול קטן ונשי, עור בהיר, עיניים כחולות, שיער בלונדיני. אוקיזיה: "+occ+". סוג טיפ: "+tipType+".\nהחזר JSON בלבד, ללא backtick, הכל בעברית:\n{\"emoji\":\"emoji\",\"occasion\":\""+occ+"\",\"tip_type\":\""+tipType+"\",\"main_tip\":\"הטיפ המרכזי\",\"outfit\":\"תיאור התלבושת\",\"colors\":\"קומבינציית צבעים ולמה מחמיאה לך\",\"why\":\"למה זה עובד למבנה הגוף שלך\",\"avoid\":\"מה להימנע ולמה\",\"accessory\":\"אקססורי מחמיא\"}";
   return callClaude(sys, "סטייל " + occ + " " + tipType);
 }
 
@@ -199,32 +227,40 @@ async function fetchWeatherAndOutfit() {
   const temp=Math.round(curr.temperature_2m);const feels=Math.round(curr.apparent_temperature);const wind=Math.round(curr.windspeed_10m);const code=curr.weathercode;
   const desc=code<=1?"Clear":code<=3?"Partly cloudy":code<=48?"Foggy":code<=67?"Rainy":code<=77?"Snow":"Stormy";
   const emoji=code<=1?"☀️":code<=3?"⛅":code<=48?"🌫️":code<=67?"🌧️":code<=77?"❄️":"⛈️";
-  const r=await callClaude(`Fashion stylist. Weather: ${temp}°C (feels ${feels}°C), ${desc}, wind ${wind}km/h, Israel. Client: woman 157cm, size S, petite hourglass.\nReturn JSON only:\n{"outfit":"outfit","layers":"layering","shoes":"shoes","tip":"tip"}`,`Outfit for ${temp}°C ${desc}`);
+  const r=await callClaude(`Fashion stylist. Weather: ${temp}°C (feels ${feels}°C), ${desc}, wind ${wind}km/h, Israel. Client: woman 157cm, size S, petite hourglass, fair skin, blue eyes, blonde hair.\nReturn JSON only:\n{"outfit":"outfit","layers":"layering","shoes":"shoes","tip":"tip"}`,`Outfit for ${temp}°C ${desc}`);
   return{...r,temp,feels,desc,emoji,wind};
 }
 
 async function fetchFamousQuote() {
-  // Use random skip to avoid repetition - quotable.io has 1000s of quotes
-  const skip = Math.floor(Math.random()*500);
+  const seen = loadSeenQuotes();
   const tagSets = ["wisdom","philosophy","science","literature","success","motivational","technology","humor","history","politics"];
   const tag = tagSets[Math.floor(Math.random()*tagSets.length)];
-  try {
-    const resp=await fetch(`https://api.quotable.io/quotes/random?limit=1&maxLength=180&tags=${tag}&skip=${skip}`);
-    if(resp.ok){
-      const data=await resp.json();
-      const q=Array.isArray(data)?data[0]:data;
-      if(q && q.content && q.author){
-        const qtext = q.content.replace(/"/g,"'").replace(/\n/g," ").substring(0,150);
-        const sys = "Explain this quote briefly. Return JSON only, no backtick: {\"emoji\":\"💬\",\"category\":\"wisdom\",\"quote\":\""+qtext+"\",\"author\":\""+q.author+"\",\"profession\":\"their field\",\"relevance\":\"why relevant today\"}";
-        return callClaude(sys, "Quote: "+q.author);
+  // Try multiple times to get an unseen quote
+  for(let attempt=0; attempt<4; attempt++){
+    try {
+      const skip = Math.floor(Math.random()*400);
+      const resp=await fetch(`https://api.quotable.io/quotes/random?limit=5&maxLength=180&tags=${tag}&skip=${skip}`);
+      if(resp.ok){
+        const data=await resp.json();
+        const quotes=Array.isArray(data)?data:[data];
+        // find one not seen recently
+        const fresh=quotes.find(q=>q?.content&&q?.author&&!seen.includes(q.author));
+        const q=fresh||quotes[0];
+        if(q?.content&&q?.author){
+          addSeenQuote(q.author);
+          const qtext = q.content.replace(/"/g,"'").replace(/\n/g," ").substring(0,150);
+          const sys = `Explain this quote briefly. Return JSON only, no backtick: {"emoji":"💬","category":"wisdom","quote":"${qtext}","author":"${q.author}","profession":"their field","relevance":"why relevant today"}`;
+          return callClaude(sys, "Quote: "+q.author);
+        }
       }
-    }
-  } catch {}
-  try {
-    const resp2=await fetch("https://api.quotable.io/quotes/random?limit=1&maxLength=180");
-    if(resp2.ok){const data=await resp2.json();const q=Array.isArray(data)?data[0]:data;if(q?.content&&q?.author){const sys=`Explain briefly. Return JSON only:\n{"emoji":"💬","category":"wisdom","quote":"${q.content.replace(/"/g,"'")}","author":"${q.author}","profession":"field","relevance":"relevance today"}`;return callClaude(sys,`Quote by ${q.author}`);}}
-  } catch {}
-  return callClaude(`Share a real famous quote from a well-known person. Return JSON only:\n{"emoji":"💬","category":"wisdom","quote":"real verbatim quote","author":"real person name","profession":"their field","relevance":"one sentence on relevance today"}`,"Famous real quote");
+    } catch {}
+  }
+  // Fallback: ask Claude for a quote, avoiding seen authors
+  const avoidList = seen.slice(-20).join(", ");
+  return callClaude(
+    `Share a real famous quote. Avoid these authors if possible: ${avoidList}.\nReturn JSON only:\n{"emoji":"💬","category":"wisdom","quote":"real verbatim quote","author":"real person name","profession":"their field","relevance":"one sentence on relevance today"}`,
+    "Famous real quote, fresh author"
+  );
 }
 
 async function fetchArabicWord() {
@@ -236,15 +272,37 @@ async function fetchArabicWord() {
 async function fetchGrammarQuestion() {
   const topics=["present perfect vs simple past","past continuous vs past simple","future: will vs going to","1st vs 2nd conditional","passive voice transformation","modal verbs (must/should/might)","reported speech","relative clauses (who/which/whose)","gerunds vs infinitives","active vs passive voice"];
   const topic=topics[Math.floor(Math.random()*topics.length)];
-  return callClaude(`English grammar teacher. Topic: ${topic}. Create a structural grammar question (not vocabulary). Show a sentence and ask the student to choose the correct grammatical form.\nReturn JSON only, no backticks:\n{"emoji":"📝","topic":"${topic}","instruction":"Choose the correct form:","sentence":"a full sentence showing the grammar point","options":["A: full sentence version A","B: full sentence version B","C: full sentence version C","D: full sentence version D"],"correct":0,"rule":"the grammar rule in simple terms","example":"another correct example","common_mistake":"typical error learners make"}`, `Grammar ${topic}`);
+  return callClaude(
+    `English grammar teacher. Topic: ${topic}. Create a structural grammar question.\nReturn JSON only, no backticks:\n{"emoji":"📝","topic":"${topic}","instruction":"Choose the correct form:","sentence":"a full sentence showing the grammar point","options":["A: full sentence version A","B: full sentence version B","C: full sentence version C","D: full sentence version D"],"correct":0,"rule_en":"the grammar rule in simple English terms","rule_he":"same rule translated to Hebrew","example_en":"another correct example in English","example_he":"Hebrew translation of the example","common_mistake":"typical error learners make"}`,
+    `Grammar ${topic}`
+  );
+}
+
+async function fetchDigitalTip() {
+  const topics=["screen time and sleep","dopamine and social media","FOMO and anxiety","mindful phone use","digital boundaries","notification overload","comparison culture","doomscrolling effects","digital detox benefits","attention span and apps"];
+  const t=topics[Math.floor(Math.random()*topics.length)];
+  const sys="Digital wellness expert. Share one insightful tip or fact about: "+t+". Based on psychology/neuroscience research.\nReturn JSON only:\n{\"emoji\":\"emoji\",\"topic\":\""+t+"\",\"tip\":\"one powerful insight or tip, 2-3 sentences\",\"action\":\"one small action to take right now\"}";
+  return callClaude(sys,"Digital wellness tip about "+t);
+}
+
+// ── SUMMARY TRIVIA (5 questions about today's page content) ──────────────────
+async function fetchSummaryTrivia(pageContent) {
+  const sys = `You are a quiz master. Based on the content summary provided, create 5 trivia questions that test knowledge of what was shown on the page today.
+Each question must have 4 options and exactly 1 correct answer.
+Return JSON only, no backticks:
+{
+  "questions": [
+    {"question":"question text","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":0,"explanation":"brief explanation"},
+    {"question":"question text","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":1,"explanation":"brief explanation"},
+    {"question":"question text","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":2,"explanation":"brief explanation"},
+    {"question":"question text","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":0,"explanation":"brief explanation"},
+    {"question":"question text","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":3,"explanation":"brief explanation"}
+  ]
+}`;
+  return callClaude(sys, "Create 5 trivia questions based on this content:\n"+pageContent);
 }
 
 // ── UI HELPERS ─────────────────────────────────────────────────────────────────
-function MagicSparkles({colors}) {
-  const sparks=useRef(Array.from({length:14},()=>({x:Math.random()*100,y:Math.random()*100,s:Math.random()*14+7,d:Math.random()*6,dur:Math.random()*4+3,color:colors[Math.floor(Math.random()*colors.length)],rot:Math.random()*360}))).current;
-  return(<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>{sparks.map((s,i)=><div key={i} style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,fontSize:s.s,opacity:0.2,animation:`float ${s.dur}s ${s.d}s infinite alternate ease-in-out`,transform:`rotate(${s.rot}deg)`,color:s.color}}>✦</div>)}</div>);
-}
-
 function Card({children,color,style={}}) {
   return(<div style={{background:`linear-gradient(145deg,${color}18,${color}06)`,border:`2px solid ${color}44`,borderRadius:22,padding:24,boxShadow:`0 6px 24px ${color}20`,position:"relative",overflow:"hidden",...style}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${color},${color}88)`}}/>{children}</div>);
 }
@@ -261,8 +319,7 @@ function TranslateBtn({color,onTranslate,translated}) {
   </button>);
 }
 
-// ── KNOWLEDGE CARD (inline, no modal) ─────────────────────────────────────────
-
+// ── KNOWLEDGE CARD ────────────────────────────────────────────────────────────
 function NewsFeedInline({items,source,color,textColor}) {
   const [expanded,setExpanded]=useState(false);
   const tc=textColor||"#333";
@@ -275,7 +332,7 @@ function NewsFeedInline({items,source,color,textColor}) {
       </div>
     ))}
     {items?.length>1&&<button onClick={()=>setExpanded(!expanded)} style={{fontSize:10,color,background:`${color}12`,border:`1px solid ${color}33`,borderRadius:20,padding:"3px 10px",cursor:"pointer",marginTop:4}}>
-      {expanded?"▲ פחות":"▼ עוד "+( items.length-1)+" כותרות"}
+      {expanded?"▲ פחות":"▼ עוד "+(items.length-1)+" כותרות"}
     </button>}
   </div>);
 }
@@ -310,9 +367,9 @@ function KnowledgeCard({topic,content,loading,error,onRefresh,textColor}) {
     {c&&(<div style={{direction:translated?"rtl":"ltr",textAlign:translated?"right":"left"}}>
       {c.type==="news_feed"?<NewsFeedInline items={c.all_items} source={c.source} color={topic.color} textColor={tc}/>:(<>
       {c.title&&<div style={{color:tc,fontSize:14,fontWeight:700,marginBottom:8,fontFamily:"serif",lineHeight:1.3}}>{c.emoji} {c.title}</div>}
-      {c.type==="fact"&&<><p style={{color:tc,fontSize:13,lineHeight:1.7,marginBottom:8}}>{c.body}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>✦ TAKEAWAY: </span><span style={{color:tc,fontSize:12}}>{c.takeaway}</span></div></>}
-      {c.type==="insight"&&<><p style={{color:tc,fontSize:13,fontWeight:600,marginBottom:6,lineHeight:1.5}}>🔎 {c.finding}</p><p style={{color:tc,fontSize:13,lineHeight:1.7,marginBottom:8}}>{c.explanation}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>🛠 APPLY: </span><span style={{color:tc,fontSize:12}}>{c.practical}</span></div></>}
-      {c.type==="quote"&&<><blockquote style={{borderLeft:`3px solid ${topic.color}`,paddingLeft:12,fontFamily:"serif",fontSize:15,fontStyle:"italic",color:tc,lineHeight:1.6,marginBottom:8}}>"{c.quote}"<footer style={{fontSize:12,color:topic.color,fontStyle:"normal",marginTop:4}}>— {c.author}</footer></blockquote><p style={{color:"#888",fontSize:12,lineHeight:1.5,marginBottom:8}}>{c.context}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>💡 TODAY: </span><span style={{color:tc,fontSize:12}}>{c.relevance}</span></div></>}
+      {c.type==="fact"&&<><p style={{color:tc,fontSize:13,lineHeight:1.7,marginBottom:8}}>{c.body}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>✦ TAKEAWAY: </span><span style={{color:tc,fontSize:12}}>{c.takeaway}</span></div>{c.source&&<div style={{color:"#bbb",fontSize:10,marginTop:6,fontFamily:"monospace"}}>📚 {c.source}</div>}</>}
+      {c.type==="insight"&&<><p style={{color:tc,fontSize:13,fontWeight:600,marginBottom:6,lineHeight:1.5}}>🔎 {c.finding}</p><p style={{color:tc,fontSize:13,lineHeight:1.7,marginBottom:8}}>{c.explanation}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>🛠 APPLY: </span><span style={{color:tc,fontSize:12}}>{c.practical}</span></div>{c.source&&<div style={{color:"#bbb",fontSize:10,marginTop:6,fontFamily:"monospace"}}>📚 {c.source}</div>}</>}
+      {c.type==="quote"&&<><blockquote style={{borderLeft:`3px solid ${topic.color}`,paddingLeft:12,fontFamily:"serif",fontSize:15,fontStyle:"italic",color:tc,lineHeight:1.6,marginBottom:8}}>"{c.quote}"<footer style={{fontSize:12,color:topic.color,fontStyle:"normal",marginTop:4}}>— {c.author}</footer></blockquote><p style={{color:"#888",fontSize:12,lineHeight:1.5,marginBottom:8}}>{c.context}</p><div style={{background:`${topic.color}12`,borderRadius:10,padding:"8px 12px"}}><span style={{color:topic.color,fontSize:10,letterSpacing:"1px",fontFamily:"monospace"}}>💡 TODAY: </span><span style={{color:tc,fontSize:12}}>{c.relevance}</span></div>{c.source&&<div style={{color:"#bbb",fontSize:10,marginTop:6,fontFamily:"monospace"}}>📚 {c.source}</div>}</>}
       </>)}
     </div>)}
 
@@ -382,7 +439,6 @@ function ArabicSection({theme}) {
         <button onClick={loadWord} style={{fontSize:11,color,background:`${color}15`,border:`1px solid ${color}33`,borderRadius:20,padding:"5px 12px",cursor:"pointer"}}>מילה חדשה</button>
       </div>
     </div>
-
     {!quizMode&&(<>
       {loading?<LoadingPulse color={color}/>:word?(<div style={{direction:"rtl"}}>
         <div style={{textAlign:"center",marginBottom:16}}>
@@ -404,7 +460,6 @@ function ArabicSection({theme}) {
         {word.tip&&<div style={{background:"#FFF3E0",borderRadius:10,padding:"8px 12px",fontSize:12,color:"#E65100"}}>💡 {word.tip}</div>}
       </div>):<div style={{color:"#ccc",fontSize:13}}>Error loading</div>}
     </>)}
-
     {quizMode&&quizWord&&(<div style={{direction:"rtl"}}>
       <div style={{marginBottom:16}}>
         <div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:8,fontFamily:"monospace"}}>✦ בוחן — מה המשמעות?</div>
@@ -423,14 +478,18 @@ function ArabicSection({theme}) {
   </Card>);
 }
 
-// ── GRAMMAR SECTION ───────────────────────────────────────────────────────────
+// ── GRAMMAR SECTION (with Hebrew/English toggle for explanations) ─────────────
 function GrammarSection({theme}) {
   const color="#1565C0";
   const [q,setQ]=useState(null);const [loading,setLoading]=useState(true);
   const [selected,setSelected]=useState(null);const [revealed,setRevealed]=useState(false);
-  const load=useCallback(()=>{setLoading(true);setQ(null);setSelected(null);setRevealed(false);fetchGrammarQuestion().then(setQ).catch(()=>setQ(null)).finally(()=>setLoading(false));},[]);
+  const [showHebrew,setShowHebrew]=useState(false);
+
+  const load=useCallback(()=>{setLoading(true);setQ(null);setSelected(null);setRevealed(false);setShowHebrew(false);fetchGrammarQuestion().then(setQ).catch(()=>setQ(null)).finally(()=>setLoading(false));},[]);
   useEffect(()=>{load();},[]);
+
   const choose=(i)=>{if(revealed)return;setSelected(i);setRevealed(true);};
+
   return(<Card color={color}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>📝</span><div><div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ גרמר אנגלית</div>{q&&<div style={{color:"#bbb",fontSize:11,marginTop:2}}>{q.topic}</div>}</div></div>
@@ -443,22 +502,31 @@ function GrammarSection({theme}) {
         {q.options?.map((opt,i)=>{const isC=i===q.correct,isSel=i===selected;let bg="#fafafa",brd="#eee",col="#555";if(revealed&&isC){bg="#E8F5E9";brd="#4CAF50";col="#2E7D32";}else if(revealed&&isSel&&!isC){bg="#FFEBEE";brd="#EF5350";col="#C62828";}return(<button key={i} onClick={()=>choose(i)} style={{background:bg,border:`2px solid ${brd}`,borderRadius:12,padding:"10px 12px",cursor:revealed?"default":"pointer",textAlign:"left",color:col,fontSize:12,lineHeight:1.4,fontFamily:"inherit",transition:"all .2s"}} onMouseEnter={e=>{if(!revealed)e.currentTarget.style.background=`${color}10`;}} onMouseLeave={e=>{if(!revealed)e.currentTarget.style.background=bg;}}>{opt}</button>);})}
       </div>
       {revealed&&(<div style={{background:`${color}10`,border:`1px solid ${color}25`,borderRadius:12,padding:14}}>
-        <div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>📚 THE RULE</div>
-        <div style={{color:"#333",fontSize:13,lineHeight:1.6,marginBottom:8}}>{q.rule}</div>
-        {q.example&&<div style={{color:"#555",fontSize:12,fontStyle:"italic",borderLeft:`3px solid ${color}`,paddingLeft:10,marginBottom:6}}>✓ {q.example}</div>}
-        {q.common_mistake&&<div style={{color:"#E57373",fontSize:12,borderLeft:`3px solid #E57373`,paddingLeft:10}}>✗ Common mistake: {q.common_mistake}</div>}
+        {/* Hebrew/English toggle button */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{color,fontSize:10,letterSpacing:"2px",fontFamily:"monospace"}}>📚 THE RULE</div>
+          <button onClick={()=>setShowHebrew(h=>!h)} style={{fontSize:10,color:showHebrew?"#2E7D32":color,background:showHebrew?"#E8F5E9":`${color}15`,border:`1px solid ${showHebrew?"#4CAF50":color}33`,borderRadius:20,padding:"3px 10px",cursor:"pointer",fontFamily:"monospace",transition:"all .2s"}}>
+            {showHebrew?"🇬🇧 English":"🇮🇱 עברית"}
+          </button>
+        </div>
+        <div style={{color:"#333",fontSize:13,lineHeight:1.6,marginBottom:8,direction:showHebrew?"rtl":"ltr",textAlign:showHebrew?"right":"left"}}>
+          {showHebrew?(q.rule_he||q.rule):(q.rule_en||q.rule)}
+        </div>
+        {(q.example_en||q.example)&&<div style={{color:"#555",fontSize:12,fontStyle:"italic",borderLeft:showHebrew?"none":"3px solid "+color,borderRight:showHebrew?"3px solid "+color:"none",paddingLeft:showHebrew?0:10,paddingRight:showHebrew?10:0,marginBottom:6,direction:showHebrew?"rtl":"ltr",textAlign:showHebrew?"right":"left"}}>
+          ✓ {showHebrew?(q.example_he||q.example):(q.example_en||q.example)}
+        </div>}
+        {q.common_mistake&&<div style={{color:"#E57373",fontSize:12,borderLeft:"3px solid #E57373",paddingLeft:10,direction:"ltr"}}>✗ Common mistake: {q.common_mistake}</div>}
       </div>)}
     </div>):<div style={{color:"#ccc",fontSize:13}}>Error loading</div>}
   </Card>);
 }
 
-// ── OTHER SECTIONS ────────────────────────────────────────────────────────────
+// ── SOCIAL / DIGITAL TIP ──────────────────────────────────────────────────────
 function SocialSection({accent,textColor}) {
-  const [checks,setChecks]=useState(loadChecks);
-  const max=3;const msgs=["✨ No social media today — amazing!","🌟 One scroll. You noticed — that's the key.","🌈 Two times. The feed is here instead.","💙 Three. Breathe. How did that feel?"];
-  const add=()=>{if(checks>=max)return;const n=checks+1;setChecks(n);saveChecks(n);};
-  const remove=()=>{if(checks<=0)return;const n=checks-1;setChecks(n);saveChecks(n);};
-  return(<Card color={accent}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}><span style={{fontSize:26}}>🧘</span><div><div style={{color:accent,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ בריאות דיגיטלית</div><div style={{color:textColor||"#333",fontSize:15,fontFamily:"serif",fontWeight:700}}>הפיד שלך — לא שלהם</div></div></div><p style={{color:"#aaa",fontSize:12,lineHeight:1.7,marginBottom:18}}>כל כניסה לכאן במקום לרשתות — ניצחון.</p><div style={{marginBottom:16}}><div style={{color:"#ccc",fontSize:11,marginBottom:12}}>כמה פעמים גללתי ברשתות היום?</div><div style={{display:"flex",gap:12,alignItems:"center"}}>{Array.from({length:max},(_,i)=><button key={i} onClick={add} style={{width:52,height:52,borderRadius:"50%",background:i<checks?`linear-gradient(135deg,${accent},${accent}bb)`:"#f8f8f8",border:`2px solid ${i<checks?accent:"#eee"}`,fontSize:22,cursor:"pointer",transition:"all .3s cubic-bezier(0.34,1.56,.64,1)",transform:i<checks?"scale(1.1)":"scale(1)",boxShadow:i<checks?`0 4px 16px ${accent}44`:"none",color:i<checks?"white":"#ddd"}}>{i<checks?"✓":"○"}</button>)}{checks>0&&<button onClick={remove} style={{fontSize:11,color:"#ccc",background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>Undo</button>}</div></div><div style={{background:`${accent}10`,border:`1px solid ${accent}25`,borderRadius:14,padding:"12px 16px"}}><div style={{color:accent,fontSize:14,fontWeight:500}}>{msgs[checks]}</div></div></Card>);
+  const [tip,setTip]=useState(null);const [loading,setLoading]=useState(true);
+  const load=useCallback(()=>{setLoading(true);setTip(null);fetchDigitalTip().then(setTip).catch(()=>setTip(null)).finally(()=>setLoading(false));},[]);
+  useEffect(()=>{load();},[]);
+  return(<Card color={accent}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:26}}>🧘</span><div><div style={{color:accent,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ בריאות דיגיטלית</div><div style={{color:textColor||"#333",fontSize:14,fontFamily:"serif",fontWeight:700}}>הפיד שלך — לא שלהם</div></div></div>{!loading&&<button onClick={load} style={{fontSize:10,color:accent,background:accent+"12",border:"1px solid "+accent+"33",borderRadius:20,padding:"4px 10px",cursor:"pointer"}}>טיפ חדש</button>}</div>{loading?<LoadingPulse color={accent}/>:tip?(<div style={{direction:"ltr"}}><div style={{color:"#888",fontSize:10,fontFamily:"monospace",marginBottom:6}}>💡 {tip.topic}</div><div style={{color:textColor||"#333",fontSize:13,lineHeight:1.7,marginBottom:10}}>{tip.tip}</div><div style={{background:accent+"12",border:"1px solid "+accent+"25",borderRadius:10,padding:"8px 12px"}}><span style={{color:accent,fontSize:10,fontFamily:"monospace"}}>▶ ACTION: </span><span style={{color:textColor||"#333",fontSize:12}}>{tip.action}</span></div></div>):<div style={{color:"#ccc",fontSize:12}}>Error</div>}</Card>);
 }
 
 function InspirationBanner({theme}) {
@@ -484,7 +552,7 @@ function DailyTaskSection({theme}) {
   const [task,setTask]=useState(null);const [loading,setLoading]=useState(true);const [done,setDone]=useState(false);
   const load=useCallback(()=>{setLoading(true);setTask(null);setDone(false);fetchDailyTask().then(setTask).catch(()=>setTask(null)).finally(()=>setLoading(false));},[]);
   useEffect(()=>{load();},[]);
-  return(<Card color={color}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>⚡</span><div><div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ משימה שדוחים</div>{task&&<div style={{color:"#bbb",fontSize:11,marginTop:2}}>{task.category}</div>}</div></div>{!loading&&<button onClick={load} style={{fontSize:11,color,background:`${color}12`,border:`1px solid ${color}33`,borderRadius:20,padding:"5px 12px",cursor:"pointer"}}>Another</button>}</div>{loading?<LoadingPulse color={color}/>:task?(<div style={{direction:"ltr"}}><div style={{display:"flex",gap:12,marginBottom:14}}><span style={{fontSize:28}}>{task.emoji}</span><div><div style={{color:theme.text,fontSize:15,fontFamily:"serif",fontWeight:700}}>{task.task}</div><div style={{color:"#aaa",fontSize:11,marginTop:2}}>{task.time}</div></div></div><div style={{background:`${color}10`,borderRadius:12,padding:12,marginBottom:10}}><div style={{color,fontSize:10,fontFamily:"monospace",marginBottom:4}}>🎯 WHY</div><div style={{color:theme.text,fontSize:13,lineHeight:1.6}}>{task.why}</div></div><div style={{background:"#F3E5F5",borderRadius:12,padding:12,marginBottom:14}}><div style={{color:"#9C27B0",fontSize:10,fontFamily:"monospace",marginBottom:4}}>▶ DO NOW</div><div style={{color:theme.text,fontSize:13,lineHeight:1.6}}>{task.how}</div></div><button onClick={()=>setDone(!done)} style={{width:"100%",padding:"11px",background:done?`linear-gradient(135deg,${color},${color}bb)`:"white",border:`2px solid ${color}`,color:done?"white":color,borderRadius:12,cursor:"pointer",fontSize:13,fontFamily:"serif",fontWeight:600,transition:"all .3s"}}>{done?"✓ Done! 🎉":"Mark as done"}</button></div>):<div style={{color:"#ccc",fontSize:13}}>Error</div>}</Card>);
+  return(<Card color={color} style={{padding:16}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:20}}>⚡</span><div style={{color,fontSize:9,letterSpacing:"2px",fontFamily:"monospace"}}>✦ משימה שדוחים</div></div>{!loading&&<button onClick={load} style={{fontSize:10,color,background:color+"12",border:"1px solid "+color+"33",borderRadius:20,padding:"3px 9px",cursor:"pointer"}}>אחרת</button>}</div>{loading?<LoadingPulse color={color}/>:task?(<div style={{direction:"ltr"}}><div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:8}}><span style={{fontSize:22}}>{task.emoji}</span><div><div style={{color:theme.text,fontSize:13,fontFamily:"serif",fontWeight:700}}>{task.task}</div><div style={{color:"#aaa",fontSize:10}}>{task.time} · {task.category}</div></div></div><div style={{color:theme.text,fontSize:12,lineHeight:1.6,marginBottom:8,padding:"8px 10px",background:color+"0a",borderRadius:8}}>{task.how}</div><button onClick={()=>setDone(!done)} style={{width:"100%",padding:"8px",background:done?"linear-gradient(135deg,"+color+","+color+"bb)":"white",border:"2px solid "+color,color:done?"white":color,borderRadius:10,cursor:"pointer",fontSize:12,fontFamily:"serif",fontWeight:600,transition:"all .3s"}}>{done?"✓ Done! 🎉":"Mark as done"}</button></div>):<div style={{color:"#ccc",fontSize:12}}>Error</div>}</Card>);
 }
 
 function HistorySection({theme}) {
@@ -521,6 +589,162 @@ function FamousQuoteSection({theme}) {
   return(<Card color={color}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>💬</span><div><div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ ציטוט מפורסם</div>{quote&&<div style={{color:"#bbb",fontSize:11,marginTop:2}}>{quote.category}</div>}</div></div>{!loading&&<button onClick={load} style={{fontSize:11,color,background:`${color}15`,border:`1px solid ${color}44`,borderRadius:20,padding:"5px 12px",cursor:"pointer"}}>New quote</button>}</div>{loading?<LoadingPulse color={color}/>:quote?(<div style={{direction:"ltr"}}><div style={{borderLeft:`4px solid ${color}`,paddingLeft:14,marginBottom:14}}><div style={{fontFamily:"serif",fontSize:17,fontStyle:"italic",color:theme.text,lineHeight:1.65}}>"{quote.quote}"</div><div style={{fontSize:13,color:color,marginTop:6,fontWeight:600}}>— {quote.author}</div><div style={{color:"#aaa",fontSize:11}}>{quote.profession}</div></div><div style={{background:`${color}10`,borderRadius:12,padding:12}}><span style={{color,fontSize:9,fontFamily:"monospace"}}>💡 TODAY: </span><span style={{color:theme.text,fontSize:13}}>{quote.relevance}</span></div></div>):<div style={{color:"#ccc",fontSize:13}}>Error</div>}</Card>);
 }
 
+// ── SUMMARY TRIVIA SECTION (5 questions, unlock social media) ─────────────────
+function SummaryTriviaSection({theme, pageContentRef}) {
+  const color="#7B1FA2";
+  const [questions,setQuestions]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [started,setStarted]=useState(false);
+  const [answers,setAnswers]=useState({}); // {qIdx: selectedIdx}
+  const [revealed,setRevealed]=useState(false);
+  const [unlocked,setUnlocked]=useState(false);
+  const [selectedSocial,setSelectedSocial]=useState(null);
+
+  const SOCIAL_SITES = [
+    {name:"Instagram",emoji:"📸",url:"https://instagram.com"},
+    {name:"Facebook",emoji:"👥",url:"https://facebook.com"},
+    {name:"TikTok",emoji:"🎵",url:"https://tiktok.com"},
+    {name:"Twitter/X",emoji:"🐦",url:"https://x.com"},
+    {name:"LinkedIn",emoji:"💼",url:"https://linkedin.com"},
+    {name:"YouTube",emoji:"▶️",url:"https://youtube.com"},
+  ];
+
+  const startTrivia = async () => {
+    setStarted(true);
+    setLoading(true);
+    setAnswers({});
+    setRevealed(false);
+    setUnlocked(false);
+
+    // Collect page content summary for questions
+    const summary = pageContentRef?.current || "Daily feed with: psychology, history, science, theater, parenting, health news, world news, selfdev, trivia, weather, famous quote, today in history, style tip, menu, grammar, arabic word.";
+    try {
+      const data = await fetchSummaryTrivia(summary);
+      setQuestions(data.questions || []);
+    } catch {
+      setQuestions(null);
+    }
+    setLoading(false);
+  };
+
+  const selectAnswer = (qIdx, optIdx) => {
+    if(revealed) return;
+    setAnswers(a=>({...a,[qIdx]:optIdx}));
+  };
+
+  const submit = () => {
+    if(Object.keys(answers).length < (questions?.length||5)) return;
+    setRevealed(true);
+    if(questions){
+      const allCorrect = questions.every((q,i)=>answers[i]===q.correct);
+      setUnlocked(allCorrect);
+    }
+  };
+
+  const allAnswered = questions && Object.keys(answers).length === questions.length;
+  const score = questions ? questions.filter((q,i)=>answers[i]===q.correct).length : 0;
+
+  return(<Card color={color}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:28}}>🏆</span>
+        <div>
+          <div style={{color,fontSize:9,letterSpacing:"3px",fontFamily:"monospace"}}>✦ טריוויה מסכמת</div>
+          <div style={{color:"#aaa",fontSize:11,marginTop:2}}>5 שאלות על תוכן הדף · פרס ברשת חברתית</div>
+        </div>
+      </div>
+    </div>
+
+    {!started&&(
+      <div style={{textAlign:"center",padding:"20px 0"}}>
+        <div style={{fontSize:40,marginBottom:12,animation:"float 3s ease-in-out infinite"}}>🔒</div>
+        <div style={{color:theme.text,fontSize:14,fontFamily:"serif",marginBottom:8}}>ענה נכון על כל 5 השאלות</div>
+        <div style={{color:"#aaa",fontSize:12,marginBottom:20}}>ותקבלי גישה לרשת חברתית לפי בחירה</div>
+        <button onClick={startTrivia} style={{background:`linear-gradient(135deg,${color},${color}cc)`,color:"white",border:"none",borderRadius:16,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"serif",boxShadow:`0 4px 16px ${color}44`}}>
+          התחילי לשחק ✨
+        </button>
+      </div>
+    )}
+
+    {started&&loading&&(
+      <div style={{textAlign:"center",padding:"30px 0"}}>
+        <LoadingPulse color={color}/>
+        <div style={{color:"#bbb",fontSize:12,marginTop:8}}>בונה שאלות על מה שלמדת היום...</div>
+      </div>
+    )}
+
+    {started&&!loading&&questions&&!revealed&&(
+      <div style={{direction:"rtl"}}>
+        <div style={{color:"#aaa",fontSize:11,marginBottom:16,fontFamily:"monospace"}}>עני על כל 5 השאלות ואז לחצי "בדיקה"</div>
+        {questions.map((q,qi)=>(
+          <div key={qi} style={{marginBottom:20,padding:14,background:`${color}08`,borderRadius:14,border:`1px solid ${color}22`}}>
+            <div style={{color:theme.text,fontSize:13,fontWeight:700,marginBottom:10,lineHeight:1.5,direction:"ltr",textAlign:"left"}}>
+              <span style={{color,fontFamily:"monospace",marginLeft:6}}>{qi+1}.</span> {q.question}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {q.options?.map((opt,oi)=>{
+                const isSel=answers[qi]===oi;
+                return(<button key={oi} onClick={()=>selectAnswer(qi,oi)} style={{background:isSel?`${color}25`:"#fafafa",border:`2px solid ${isSel?color:"#eee"}`,borderRadius:10,padding:"8px 10px",cursor:"pointer",textAlign:"left",color:isSel?color:"#555",fontSize:12,lineHeight:1.4,fontFamily:"inherit",transition:"all .15s",direction:"ltr"}}>{opt}</button>);
+              })}
+            </div>
+          </div>
+        ))}
+        <button onClick={submit} disabled={!allAnswered} style={{width:"100%",padding:"14px",background:allAnswered?`linear-gradient(135deg,${color},${color}cc)`:"#eee",color:allAnswered?"white":"#aaa",border:"none",borderRadius:14,cursor:allAnswered?"pointer":"default",fontSize:15,fontWeight:700,fontFamily:"serif",transition:"all .3s",boxShadow:allAnswered?`0 4px 16px ${color}44`:"none"}}>
+          {allAnswered?"בדיקה! 🎯":"ענה על כל השאלות קודם"}
+        </button>
+      </div>
+    )}
+
+    {started&&!loading&&questions&&revealed&&!unlocked&&(
+      <div style={{direction:"rtl",textAlign:"right"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:48}}>😔</div>
+          <div style={{color:theme.text,fontSize:18,fontFamily:"serif",fontWeight:700,marginBottom:6}}>{score}/5 נכון</div>
+          <div style={{color:"#aaa",fontSize:13}}>צריך 5/5 כדי לפתוח רשת חברתית</div>
+        </div>
+        {questions.map((q,qi)=>{
+          const isCorrect=answers[qi]===q.correct;
+          return(<div key={qi} style={{marginBottom:12,padding:12,borderRadius:12,background:isCorrect?"#E8F5E9":"#FFEBEE",border:`1px solid ${isCorrect?"#4CAF50":"#EF5350"}33`}}>
+            <div style={{fontSize:12,color:"#555",marginBottom:4,direction:"ltr",textAlign:"left"}}>{isCorrect?"✅":"❌"} {q.question}</div>
+            <div style={{fontSize:11,color:isCorrect?"#2E7D32":"#C62828",direction:"ltr",textAlign:"left"}}>
+              {isCorrect?"נכון!":"תשובה נכונה: "+q.options[q.correct]}
+            </div>
+          </div>);
+        })}
+        <button onClick={()=>{setStarted(false);setQuestions(null);}} style={{width:"100%",marginTop:12,padding:"12px",background:`linear-gradient(135deg,${color},${color}cc)`,color:"white",border:"none",borderRadius:14,cursor:"pointer",fontSize:14,fontWeight:700}}>נסי שוב 🔄</button>
+      </div>
+    )}
+
+    {unlocked&&!selectedSocial&&(
+      <div style={{textAlign:"center",direction:"rtl"}}>
+        <div style={{fontSize:52,marginBottom:12,animation:"float 2s ease-in-out infinite"}}>🎉</div>
+        <div style={{color:theme.text,fontSize:18,fontFamily:"serif",fontWeight:700,marginBottom:6}}>5/5 מושלם! 🌟</div>
+        <div style={{color:"#aaa",fontSize:13,marginBottom:20}}>בחרי לאיזו רשת חברתית ללכת</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          {SOCIAL_SITES.map(s=>(
+            <button key={s.name} onClick={()=>setSelectedSocial(s)} style={{background:`${color}12`,border:`2px solid ${color}33`,borderRadius:14,padding:"14px 8px",cursor:"pointer",transition:"all .2s",fontFamily:"inherit"}} onMouseEnter={e=>e.currentTarget.style.transform="scale(1.05)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+              <div style={{fontSize:28,marginBottom:4}}>{s.emoji}</div>
+              <div style={{fontSize:11,color:theme.text,fontWeight:600}}>{s.name}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {unlocked&&selectedSocial&&(
+      <div style={{textAlign:"center",direction:"rtl",padding:"10px 0"}}>
+        <div style={{fontSize:48,marginBottom:10}}>{selectedSocial.emoji}</div>
+        <div style={{color:theme.text,fontSize:16,fontFamily:"serif",fontWeight:700,marginBottom:6}}>פותח {selectedSocial.name}...</div>
+        <div style={{color:"#aaa",fontSize:12,marginBottom:20}}>הרווחת את זה! 🏆</div>
+        <a href={selectedSocial.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",background:`linear-gradient(135deg,${color},${color}cc)`,color:"white",textDecoration:"none",borderRadius:16,padding:"14px 32px",fontSize:15,fontWeight:700,boxShadow:`0 4px 16px ${color}44`}}>
+          פתחי {selectedSocial.name} →
+        </a>
+        <button onClick={()=>setSelectedSocial(null)} style={{display:"block",margin:"12px auto 0",fontSize:11,color:"#aaa",background:"transparent",border:"none",cursor:"pointer"}}>← חזרה לבחירה</button>
+      </div>
+    )}
+  </Card>);
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [tod]=useState(getTimeOfDay);
@@ -531,11 +755,22 @@ export default function App() {
   const [selfDev,setSelfDev]=useState(null);const [selfDevLoading,setSelfDevLoading]=useState(true);const [selfDevError,setSelfDevError]=useState(false);
   const [menu,setMenu]=useState(null);const [menuLoading,setMenuLoading]=useState(true);
   const [recipeMeal,setRecipeMeal]=useState(null);
+  const [recipeForChild,setRecipeForChild]=useState(false);
   const startedRef=useRef(false);
+  const pageContentRef=useRef("");
 
   const loadTopic=useCallback(async(topic)=>{setLoadingTopics(p=>new Set([...p,topic.id]));setTopicErrors(p=>({...p,[topic.id]:false}));try{const c=await fetchKnowledge(topic);setKnowledge(p=>({...p,[topic.id]:c}));saveCache(topic.id,c);}catch(e){console.error(topic.id,e);setTopicErrors(p=>({...p,[topic.id]:true}));}setLoadingTopics(p=>{const n=new Set(p);n.delete(topic.id);return n;});},[]);
   const refreshTopic=useCallback((topic)=>{setKnowledge(p=>({...p,[topic.id]:null}));loadTopic(topic);},[loadTopic]);
   const refreshSelfDev=useCallback(()=>{setSelfDevLoading(true);setSelfDev(null);setSelfDevError(false);fetchSelfDev().then(setSelfDev).catch(()=>setSelfDevError(true)).finally(()=>setSelfDevLoading(false));},[]);
+
+  // Build page content summary for summary trivia
+  useEffect(()=>{
+    if(Object.keys(knowledge).length>0){
+      const summaryParts=[];
+      KNOWLEDGE_TOPICS.forEach(t=>{const c=knowledge[t.id];if(c&&c.title)summaryParts.push(`${t.label}: ${c.title}. ${c.body||c.finding||c.quote||""}`);});
+      pageContentRef.current=summaryParts.join("\n").substring(0,2000);
+    }
+  },[knowledge]);
 
   useEffect(()=>{injectPWA();if(startedRef.current)return;startedRef.current=true;KNOWLEDGE_TOPICS.forEach(loadTopic);fetchSelfDev().then(setSelfDev).catch(()=>setSelfDevError(true)).finally(()=>setSelfDevLoading(false));fetchDailyMenu().then(setMenu).catch(console.error).finally(()=>setMenuLoading(false));},[]);
 
@@ -559,33 +794,28 @@ export default function App() {
         {readyCount<KNOWLEDGE_TOPICS.length&&<div style={{color:"#ccc",fontSize:10,marginTop:8,fontFamily:"monospace"}}>Loading {readyCount}/{KNOWLEDGE_TOPICS.length}... ✨</div>}
       </div>
 
+      {/* 1. השראה */}
       <InspirationBanner theme={theme}/>
 
-      {/* Weather + Social */}
+      {/* 2. מזג אוויר + בריאות דיגיטלית */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14,marginBottom:28}}>
         <div><SectionLabel color={theme.subtext} text="מזג אוויר + לבוש"/><WeatherSection theme={theme}/></div>
         <div><SectionLabel color={theme.subtext} text="בריאות דיגיטלית"/><SocialSection accent={theme.accent} textColor={theme.text}/></div>
       </div>
 
-      {/* Quote */}
+      {/* 3. ציטוט מפורסם */}
       <div style={{marginBottom:28}}><SectionLabel color={theme.subtext} text="ציטוט מפורסם"/><FamousQuoteSection theme={theme}/></div>
 
-      {/* History + Style */}
+      {/* 4. היסטוריה + סטייל */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14,marginBottom:28}}>
         <div><SectionLabel color={theme.subtext} text="היום בהיסטוריה"/><HistorySection theme={theme}/></div>
         <div><SectionLabel color={theme.subtext} text="סטייל יומי"/><StyleSection theme={theme}/></div>
       </div>
 
-      {/* Task */}
+      {/* 5. משימה שדוחים */}
       <div style={{marginBottom:28}}><SectionLabel color={theme.subtext} text="משימה שדוחים"/><DailyTaskSection theme={theme}/></div>
 
-      {/* Arabic + Grammar */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14,marginBottom:28}}>
-        <div><SectionLabel color={theme.subtext} text="לימוד ערבית 🕌"/><ArabicSection theme={theme}/></div>
-        <div><SectionLabel color={theme.subtext} text="גרמר אנגלית 📝"/><GrammarSection theme={theme}/></div>
-      </div>
-
-      {/* Knowledge Grid */}
+      {/* 6. ידע יומי */}
       <div style={{marginBottom:28}}>
         <SectionLabel color={theme.subtext} text="ידע יומי"/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
@@ -597,37 +827,82 @@ export default function App() {
         </div>
       </div>
 
-      {/* Self Dev */}
+      {/* 7. פיתוח אישי */}
       <div style={{marginBottom:28}}>
         <SectionLabel color={theme.subtext} text="פיתוח אישי"/>
         <SelfDevCard content={selfDev} loading={selfDevLoading} error={selfDevError} onRefresh={refreshSelfDev} color={theme.tertiary} textColor={theme.text}/>
       </div>
 
-      {/* Trivia */}
+      {/* 8. טריוויה יומית */}
       <div style={{marginBottom:28}}><SectionLabel color={theme.subtext} text="טריוויה יומית"/><TriviaSection theme={theme}/></div>
 
-      {/* Menu */}
-      <div>
-        <SectionLabel color={theme.subtext} text="תפריט יומי צמחוני"/>
+      {/* 9. תפריט צמחוני */}
+      <div style={{marginBottom:28}}>
+        <SectionLabel color={theme.subtext} text="תפריט יומי"/>
         <div style={{background:menu?`linear-gradient(145deg,${theme.accent}15,${theme.accent}05)`:"white",border:`2px solid ${theme.accent}33`,borderRadius:22,padding:24,boxShadow:`0 6px 20px ${theme.accent}18`,position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:`linear-gradient(90deg,${theme.accent},${theme.secondary},${theme.tertiary})`}}/>
           {menuLoading?<div style={{display:"flex",alignItems:"center",gap:12,paddingTop:4}}><div style={{fontSize:24,animation:"float 1s ease-in-out infinite"}}>🥗</div><span style={{color:"#ccc",fontSize:13}}>Loading menu...</span></div>
-          :menu?(<div style={{paddingTop:4}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}><span style={{fontSize:28}}>{menu.emoji}</span><div><div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",fontFamily:"monospace"}}>TODAY'S THEME</div><div style={{color:theme.text,fontSize:15,fontFamily:"serif",fontWeight:700,direction:"ltr"}}>{menu.theme}</div></div></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))",gap:12,marginBottom:16}}>{["breakfast","lunch","dinner","snack"].map(m=>menu[m]&&<div key={m} style={{background:`linear-gradient(145deg,${theme.accent}12,${theme.secondary}08)`,border:`1px solid ${theme.accent}33`,borderRadius:16,padding:"14px 12px"}}><div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>{MEAL_ICONS[m]} {MEAL_NAMES[m]}</div><div style={{color:theme.text,fontSize:13,fontWeight:700,marginBottom:4,lineHeight:1.3,direction:"ltr"}}>{menu[m].name}</div><div style={{color:"#bbb",fontSize:11,lineHeight:1.4,marginBottom:10,direction:"ltr"}}>{menu[m].description}</div><button onClick={()=>setRecipeMeal(menu[m])} style={{fontSize:10,color:theme.accent,background:`${theme.accent}12`,border:`1px solid ${theme.accent}33`,borderRadius:20,padding:"4px 12px",cursor:"pointer"}}>Recipe ✨</button></div>)}</div>
-          {menu.tip&&<div style={{background:`${theme.accent}08`,border:`1px solid ${theme.accent}20`,borderRadius:14,padding:"12px 16px",color:"#aaa",fontSize:12,direction:"ltr"}}>💡 {menu.tip}</div>}</div>)
+          :menu?(<div style={{paddingTop:4}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}><span style={{fontSize:28}}>{menu.emoji}</span><div><div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",fontFamily:"monospace"}}>TODAY'S THEME</div><div style={{color:theme.text,fontSize:15,fontFamily:"serif",fontWeight:700,direction:"rtl"}}>{menu.theme}</div></div></div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))",gap:12,marginBottom:16}}>
+              {["breakfast","lunch","dinner","snack"].map(m=>menu[m]&&(
+                <div key={m} style={{background:`linear-gradient(145deg,${theme.accent}12,${theme.secondary}08)`,border:`1px solid ${theme.accent}33`,borderRadius:16,padding:"14px 12px"}}>
+                  <div style={{color:"#ccc",fontSize:9,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>{MEAL_ICONS[m]} {MEAL_NAMES[m]}</div>
+                  <div style={{color:theme.text,fontSize:13,fontWeight:700,marginBottom:4,lineHeight:1.3,direction:"rtl"}}>{menu[m].name}</div>
+                  <div style={{color:"#bbb",fontSize:11,lineHeight:1.4,marginBottom:6,direction:"rtl"}}>{menu[m].description}</div>
+                  {/* Adult / Child recipe buttons */}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <button onClick={()=>{setRecipeForChild(false);setRecipeMeal(menu[m]);}} style={{fontSize:10,color:theme.accent,background:`${theme.accent}12`,border:`1px solid ${theme.accent}33`,borderRadius:20,padding:"4px 10px",cursor:"pointer"}}>🌿 מתכון</button>
+                    {m==="lunch"&&menu[m].child&&<button onClick={()=>{setRecipeForChild(true);setRecipeMeal({name:menu[m].child,description:menu[m].description});}} style={{fontSize:10,color:"#E64A19",background:"#FBE9E7",border:"1px solid #E64A1944",borderRadius:20,padding:"4px 10px",cursor:"pointer"}}>🍖 לילד</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {menu.tip&&<div style={{background:`${theme.accent}08`,border:`1px solid ${theme.accent}20`,borderRadius:14,padding:"12px 16px",color:"#aaa",fontSize:12,direction:"rtl"}}>💡 {menu.tip}</div>}
+          </div>)
           :<div style={{color:"#ccc",fontSize:13,paddingTop:4}}>Error — refresh page</div>}
         </div>
       </div>
+
+      {/* 10. טריוויה מסכמת */}
+      <div style={{marginBottom:28}}>
+        <SectionLabel color={theme.subtext} text="טריוויה מסכמת — פתחי רשת חברתית 🔓"/>
+        <SummaryTriviaSection theme={theme} pageContentRef={pageContentRef}/>
+      </div>
+
+      {/* 11. לימוד ערבית */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14,marginBottom:28}}>
+        <div><SectionLabel color={theme.subtext} text="לימוד ערבית 🕌"/><ArabicSection theme={theme}/></div>
+
+        {/* 12. גרמר אנגלית */}
+        <div><SectionLabel color={theme.subtext} text="גרמר אנגלית 📝"/><GrammarSection theme={theme}/></div>
+      </div>
+
     </div>
 
     {/* Recipe Modal */}
-    {recipeMeal&&(<div onClick={()=>setRecipeMeal(null)} style={{position:"fixed",inset:0,background:"rgba(100,80,150,0.25)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:400,padding:16,backdropFilter:"blur(12px)"}}><div onClick={e=>e.stopPropagation()} style={{background:"white",border:`2px solid ${theme.accent}44`,borderRadius:28,padding:36,maxWidth:520,width:"100%",maxHeight:"90vh",overflowY:"auto",direction:"ltr",position:"relative",boxShadow:`0 20px 60px ${theme.accent}25`,animation:"mIn .35s cubic-bezier(0.34,1.56,.64,1)"}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,borderRadius:"28px 28px 0 0",background:`linear-gradient(90deg,${theme.accent},${theme.secondary})`}}/><button onClick={()=>setRecipeMeal(null)} style={{position:"absolute",top:18,right:18,background:`${theme.accent}15`,border:`1px solid ${theme.accent}33`,color:theme.accent,borderRadius:"50%",width:34,height:34,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:"bold"}}>×</button><RecipeContent meal={recipeMeal} color={theme.accent} textColor={theme.text}/></div></div>)}
+    {recipeMeal&&(<div onClick={()=>setRecipeMeal(null)} style={{position:"fixed",inset:0,background:"rgba(100,80,150,0.25)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:400,padding:16,backdropFilter:"blur(12px)"}}><div onClick={e=>e.stopPropagation()} style={{background:"white",border:`2px solid ${theme.accent}44`,borderRadius:28,padding:36,maxWidth:520,width:"100%",maxHeight:"90vh",overflowY:"auto",direction:"ltr",position:"relative",boxShadow:`0 20px 60px ${theme.accent}25`,animation:"mIn .35s cubic-bezier(0.34,1.56,.64,1)"}}><div style={{position:"absolute",top:0,left:0,right:0,height:4,borderRadius:"28px 28px 0 0",background:`linear-gradient(90deg,${theme.accent},${theme.secondary})`}}/><button onClick={()=>setRecipeMeal(null)} style={{position:"absolute",top:18,right:18,background:`${theme.accent}15`,border:`1px solid ${theme.accent}33`,color:theme.accent,borderRadius:"50%",width:34,height:34,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:"bold"}}>×</button><RecipeContent meal={recipeMeal} color={theme.accent} textColor={theme.text} forChild={recipeForChild}/></div></div>)}
   </div>);
 }
 
-function RecipeContent({meal,color,textColor}) {
+function RecipeContent({meal,color,textColor,forChild=false}) {
   const [detail,setDetail]=useState(null);const [loading,setLoading]=useState(true);const [error,setError]=useState(false);
-  useEffect(()=>{fetchMenuDetail(meal.name,meal.description).then(setDetail).catch(()=>setError(true)).finally(()=>setLoading(false));},[]);
+  useEffect(()=>{fetchMenuDetail(meal.name,meal.description,forChild).then(setDetail).catch(()=>setError(true)).finally(()=>setLoading(false));},[]);
   const tc=textColor||"#333";
-  return(<div style={{paddingTop:4}}><h2 style={{color:tc,fontSize:22,fontFamily:"serif",marginBottom:6}}>{meal.name}</h2><p style={{color:"#aaa",fontSize:13,marginBottom:24}}>{meal.description}</p>{loading&&<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:32,animation:"float 1s ease-in-out infinite"}}>🍳</div></div>}{error&&<div style={{textAlign:"center",color:"#aaa"}}>Error loading recipe</div>}{detail&&(<><div style={{display:"flex",gap:10,marginBottom:20}}><span style={{background:`${color}15`,color,fontSize:11,padding:"4px 12px",borderRadius:20}}>⏱ {detail.time}</span><span style={{background:`${color}15`,color,fontSize:11,padding:"4px 12px",borderRadius:20}}>📊 {detail.difficulty}</span></div><div style={{marginBottom:20}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:10,fontFamily:"monospace"}}>🛒 INGREDIENTS</div>{detail.ingredients?.map((ing,i)=><div key={i} style={{color:"#555",fontSize:14,padding:"6px 0",borderBottom:"1px solid #f5f5f5"}}>◆ {ing}</div>)}</div><div style={{marginBottom:20}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:10,fontFamily:"monospace"}}>👩‍🍳 STEPS</div>{detail.steps?.map((step,i)=><div key={i} style={{color:"#555",fontSize:14,padding:"8px 0",display:"flex",gap:10,borderBottom:"1px solid #f9f9f9"}}><span style={{background:color,color:"white",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0,fontWeight:700}}>{i+1}</span><span style={{lineHeight:1.5}}>{step}</span></div>)}</div>{detail.tip&&<div style={{background:`${color}10`,border:`1px solid ${color}25`,borderRadius:14,padding:16}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>💡 CHEF'S TIP</div><div style={{color:"#555",fontSize:13}}>{detail.tip}</div></div>}</>)}</div>);
+  return(<div style={{paddingTop:4}}>
+    {forChild&&<div style={{background:"#FBE9E7",borderRadius:10,padding:"6px 12px",marginBottom:12,fontSize:12,color:"#E64A19",display:"inline-block"}}>🍖 מתכון לילד (עם בשר/עוף)</div>}
+    <h2 style={{color:tc,fontSize:22,fontFamily:"serif",marginBottom:6}}>{meal.name}</h2>
+    <p style={{color:"#aaa",fontSize:13,marginBottom:24}}>{meal.description}</p>
+    {loading&&<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:32,animation:"float 1s ease-in-out infinite"}}>🍳</div></div>}
+    {error&&<div style={{textAlign:"center",color:"#aaa"}}>Error loading recipe</div>}
+    {detail&&(<>
+      <div style={{display:"flex",gap:10,marginBottom:20}}>
+        <span style={{background:`${color}15`,color,fontSize:11,padding:"4px 12px",borderRadius:20}}>⏱ {detail.time}</span>
+        <span style={{background:`${color}15`,color,fontSize:11,padding:"4px 12px",borderRadius:20}}>📊 {detail.difficulty}</span>
+      </div>
+      <div style={{marginBottom:20}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:10,fontFamily:"monospace"}}>🛒 INGREDIENTS</div>{detail.ingredients?.map((ing,i)=><div key={i} style={{color:"#555",fontSize:14,padding:"6px 0",borderBottom:"1px solid #f5f5f5"}}>◆ {ing}</div>)}</div>
+      <div style={{marginBottom:20}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:10,fontFamily:"monospace"}}>👩‍🍳 STEPS</div>{detail.steps?.map((step,i)=><div key={i} style={{color:"#555",fontSize:14,padding:"8px 0",display:"flex",gap:10,borderBottom:"1px solid #f9f9f9"}}><span style={{background:color,color:"white",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0,fontWeight:700}}>{i+1}</span><span style={{lineHeight:1.5}}>{step}</span></div>)}</div>
+      {detail.tip&&<div style={{background:`${color}10`,border:`1px solid ${color}25`,borderRadius:14,padding:16}}><div style={{color,fontSize:10,letterSpacing:"2px",marginBottom:6,fontFamily:"monospace"}}>💡 CHEF'S TIP</div><div style={{color:"#555",fontSize:13}}>{detail.tip}</div></div>}
+    </>)}
+  </div>);
 }
